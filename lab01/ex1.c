@@ -1,0 +1,21 @@
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int pid, pid_pai;
+    pid = fork();
+    pid_pai = getpid();
+
+    if (pid != 0) { //pai 
+        waitpid(-1, NULL, 0);
+        printf("pid pai: %d\n", pid_pai);
+    }
+    else { //filho 
+        printf("pid filho: %d\n", pid);
+        exit(1);
+    }
+    return 0;
+}
