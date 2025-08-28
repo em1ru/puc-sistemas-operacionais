@@ -13,7 +13,7 @@ int main(void) {
         waitpid(pid, NULL, 0);
     }
     else { //filho 
-        char *const argv[] = {"echo", "Echo"};
+        char *const argv[] = {"echo", "Echo", NULL};
         execv("/bin/echo", argv);
         exit(1);
     }

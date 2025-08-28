@@ -4,17 +4,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int* v = (int*)malloc(10*sizeof(int));
-
-for (int i = 0; i < 10; i++) {
-    v[i] = 9 - i;
-}
-
 int main() {
+    int *v;
     int pid;
 
+    v = (int*)malloc(10*sizeof(int));
+
     for (int i = 0; i < 10; i++) {
-        waitpid(pid, NULL, 0);
+        v[i] = 9 - i;
+    }
+
+    for (int i = 0; i < 10; i++) {
         printf("(pai antes) v[%d] = %d\n", i, v[i]);
     }
     
@@ -32,5 +32,7 @@ int main() {
         }
         exit(1);
     }
+    
+    free(v);
     return 0;
 }

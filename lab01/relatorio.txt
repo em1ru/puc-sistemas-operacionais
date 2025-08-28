@@ -1,6 +1,41 @@
 RELATÓRIO - LAB 01 
 
 Gabriel Valente  
+Gabriel Emile - 2220498
+
+Exercício 1)
+
+-- CÓDIGO --
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int pid, pid_pai;
+    pid = fork();
+    pid_pai = getpid();
+
+    if (pid != 0) { //pai 
+        waitpid(-1, NULL, 0);
+        printf("pid pai: %d\n", pid_pai);
+    }
+    else { //filho 
+        printf("pid filho: %d\n", pid);
+        exit(1);
+    }
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -Wall -o ex1 ex1.c 
+./ex1
+
+-- OUTPUT --
+RELATÓRIO - LAB 01 
+
+Gabriel Valente  
 Gabriel Emile     
 
 Exercício 1)
@@ -33,3 +68,196 @@ gcc -Wall -o ex1 ex1.c
 ./ex1
 
 -- OUTPUT --
+pid filho: 0
+pid pai: 18463
+
+-- ANÁLISE --
+O fork() cria um processo filho. No processo filho, o retorno de fork() é 0, por isso aparece pid filho: 0. O processo pai espera o filho terminar com waitpid() e depois imprime seu próprio PID (18463). Esse comportamento confirma que pai e filho são processos distintos.
+
+Exercício 2)
+
+-- CÓDIGO --
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int pid, var;
+    var = 1;
+    printf("(pai antes) var = %d\n", var);
+
+    pid = fork();
+
+    if (pid != 0) { //pai 
+        waitpid(pid, NULL, 0);
+        printf("(pai depois) var = %d\n", var);
+
+    }
+    else { //filho 
+        var = 5;
+        printf("(filho) var = %d\n", var);
+        exit(1);
+    }
+    return 0;
+}
+
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -Wall -o ex2 ex2.c
+./ex2
+
+-- OUTPUT --
+(pai antes) var = 1
+(filho) var = 5
+(pai depois) var = 1
+
+-- ANÁLISE --
+Apesar da variável var ser declarada antes do fork(), após a chamada cada processo (pai e filho) possui sua própria cópia da memória. O filho altera var para 5, mas essa mudança não afeta o pai. O pai imprime 1 tanto antes quanto depois, mostrando que as memórias não são compartilhadas.
+
+Exercício 3)
+
+-- CÓDIGO --
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    int *v;
+    int pid;
+
+    v = (int*)malloc(10*sizeof(int));
+
+    for (int i = 0; i < 10; i++) {
+        v[i] = 9 - i;
+    }
+
+    for (int i = 0; i < 10; i++) {
+        printf("(pai antes) v[%d] = %d\n", i, v[i]);
+    }
+    
+    pid = fork();
+
+    if (pid != 0) { //pai 
+        waitpid(pid, NULL, 0);
+        for (int i = 0; i < 10; i++) {
+            printf("(pai depois) v[%d] = %d\n", i, v[i]);
+        }
+    }
+    else { //filho 
+        for (int i = 0; i < 10; i++) {
+            v[i] = i;
+        }
+        exit(1);
+    }
+    
+    free(v);
+    return 0;
+}
+
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -Wall -o ex3 ex3.c
+./ex3
+
+-- OUTPUT --
+(pai antes) v[0] = 9
+(pai antes) v[1] = 8
+(pai antes) v[2] = 7
+(pai antes) v[3] = 6
+(pai antes) v[4] = 5
+(pai antes) v[5] = 4
+(pai antes) v[6] = 3
+(pai antes) v[7] = 2
+(pai antes) v[8] = 1
+(pai antes) v[9] = 0
+(pai depois) v[0] = 9
+(pai depois) v[1] = 8
+(pai depois) v[2] = 7
+(pai depois) v[3] = 6
+(pai depois) v[4] = 5
+(pai depois) v[5] = 4
+(pai depois) v[6] = 3
+(pai depois) v[7] = 2
+(pai depois) v[8] = 1
+(pai depois) v[9] = 0
+
+-- ANÁLISE --
+O filho altera os valores do vetor, mas o pai não vê essas mudanças. Isso ocorre porque, após o fork(), o vetor também é duplicado em memória. Ou seja, pai e filho não compartilham o mesmo vetor.
+
+Exercício 4 parte 1)
+
+-- CÓDIGO --
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    int pid;
+    
+    pid = fork();
+
+    if (pid != 0) { //pai 
+        waitpid(pid, NULL, 0);
+    }
+    else { //filho 
+        execv("./alomundo", NULL);
+        exit(1);
+    }
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -Wall -o ex4_p1 ex4_p1.c
+./ex4_p1
+
+-- OUTPUT --
+alo mundo
+
+
+-- ANÁLISE --
+O filho, em vez de continuar a executar seu código, é substituído por outro programa (alomundo) através da chamada execv. O processo filho deixa de existir como era e passa a ser o novo programa.
+
+Exercício 4 parte 2)
+
+-- CÓDIGO --
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+    int pid;
+    
+    pid = fork();
+
+    if (pid != 0) { //pai 
+        waitpid(pid, NULL, 0);
+    }
+    else { //filho 
+        char *const argv[] = {"echo", "Echo", NULL};
+        execv("/bin/echo", argv);
+        exit(1);
+    }
+    return 0;
+}
+
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -Wall -o ex4_p2 ex4_p2.c
+./ex4_p2
+
+
+-- OUTPUT --
+Echo
+
+
+
+-- ANÁLISE --
+O processo filho executa o comando echo do sistema. Novamente, o execv substitui a imagem do processo filho, mas desta vez por um programa externo ao repositório.
