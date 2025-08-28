@@ -1,6 +1,6 @@
 RELATÓRIO - LAB 01 
 
-Gabriel Valente  
+Gabriel Valente - 2310488
 Gabriel Emile - 2220498
 
 Exercício 1)
@@ -33,46 +33,11 @@ gcc -Wall -o ex1 ex1.c
 ./ex1
 
 -- OUTPUT --
-RELATÓRIO - LAB 01 
-
-Gabriel Valente  
-Gabriel Emile     
-
-Exercício 1)
-
--- CÓDIGO --
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <stdio.h>
-#include <stdlib.h>
-
-int main() {
-    int pid, pid_pai;
-    pid = fork();
-    pid_pai = getpid();
-
-    if (pid != 0) { //pai 
-        waitpid(-1, NULL, 0);
-        printf("pid pai: %d\n", pid_pai);
-    }
-    else { //filho 
-        printf("pid filho: %d\n", pid);
-        exit(1);
-    }
-    return 0;
-}
-
--- COMPILAÇÃO E EXECUÇÃO -- 
-gcc -Wall -o ex1 ex1.c 
-./ex1
-
--- OUTPUT --
 pid filho: 0
-pid pai: 18463
+pid pai: 183
 
 -- ANÁLISE --
-O fork() cria um processo filho. No processo filho, o retorno de fork() é 0, por isso aparece pid filho: 0. O processo pai espera o filho terminar com waitpid() e depois imprime seu próprio PID (18463). Esse comportamento confirma que pai e filho são processos distintos.
+O fork() cria um processo filho. No processo filho, o retorno de fork() é 0, por isso aparece pid filho: 0. O processo pai espera o filho terminar com waitpid() e depois imprime seu próprio pid (183). Esse comportamento confirma que pai e filho são processos distintos. Vale ressaltar que o fork retorna sempre zero para o pid do filho. Caso quiséssemos obter o pid real do filho, bastaria imprimir printf("pid filho: %d\n", getpid()) dentro do else, ao invés de imprimir a variável pid, que é sempre zero. 
 
 Exercício 2)
 
@@ -103,9 +68,8 @@ int main() {
     return 0;
 }
 
-
 -- COMPILAÇÃO E EXECUÇÃO -- 
-gcc -Wall -o ex2 ex2.c
+gcc -Wall -o ex2 ex2.c 
 ./ex2
 
 -- OUTPUT --
@@ -114,7 +78,7 @@ gcc -Wall -o ex2 ex2.c
 (pai depois) var = 1
 
 -- ANÁLISE --
-Apesar da variável var ser declarada antes do fork(), após a chamada cada processo (pai e filho) possui sua própria cópia da memória. O filho altera var para 5, mas essa mudança não afeta o pai. O pai imprime 1 tanto antes quanto depois, mostrando que as memórias não são compartilhadas.
+Apesar da variável var ser declarada antes do fork(), após a chamada cada processo (pai e filho) possui sua própria cópia da memória. Em outras palavras, cada processo inicializa uma variável var diferente na memória, tornando-as independentes uma da outra. Daí, o filho altera var para 5, mas essa mudança não afeta o pai. O pai imprime 1 tanto antes quanto depois, mostrando que os espaços de memória de cada processo não são compartilhados.
 
 Exercício 3)
 
@@ -186,7 +150,7 @@ gcc -Wall -o ex3 ex3.c
 (pai depois) v[9] = 0
 
 -- ANÁLISE --
-O filho altera os valores do vetor, mas o pai não vê essas mudanças. Isso ocorre porque, após o fork(), o vetor também é duplicado em memória. Ou seja, pai e filho não compartilham o mesmo vetor.
+O filho altera os valores do vetor, mas o pai não vê essas mudanças. Isso ocorre porque, após o fork(), o vetor também é duplicado em memória. Ou seja, pai e filho não compartilham o mesmo vetor. Essa tentativa ilustra apenas um caso particular da constatação geral de que não há como criar, dadas as ferramentas disponíveis até o presente momento, um mesmo vetor compartilhado entre processos pai e filho. Portanto, respondendo à questão, pai e filho não usarão jamais o mesmo vetor na memória, o que impossibiltia sua criação e sua ordenação de serem feitas, cada qual, por processos pai e filho distintos.   
 
 Exercício 4 parte 1)
 
@@ -219,7 +183,6 @@ gcc -Wall -o ex4_p1 ex4_p1.c
 -- OUTPUT --
 alo mundo
 
-
 -- ANÁLISE --
 O filho, em vez de continuar a executar seu código, é substituído por outro programa (alomundo) através da chamada execv. O processo filho deixa de existir como era e passa a ser o novo programa.
 
@@ -248,16 +211,12 @@ int main(void) {
     return 0;
 }
 
-
 -- COMPILAÇÃO E EXECUÇÃO -- 
 gcc -Wall -o ex4_p2 ex4_p2.c
 ./ex4_p2
 
-
 -- OUTPUT --
 Echo
-
-
 
 -- ANÁLISE --
 O processo filho executa o comando echo do sistema. Novamente, o execv substitui a imagem do processo filho, mas desta vez por um programa externo ao repositório.
