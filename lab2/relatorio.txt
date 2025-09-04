@@ -1,0 +1,54 @@
+RELATÓRIO - LAB 02 
+
+Gabriel Valente - 2310488
+Gabriel Emile - 2220498
+
+Exercício 2) Mensagem do Dia
+
+-- ARQUIVOS --
+- servidor.c: Programa que cria memória compartilhada e salva mensagem
+- cliente.c: Programa que lê a mensagem da memória compartilhada
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -o servidor servidor.c
+gcc -o cliente cliente.c
+./servidor
+./cliente
+
+-- OUTPUT --
+Digite a mensagem do dia: Bom dia
+Mensagem criada com ID: 1
+Digite o ID do segmento (mostrado pelo servidor): 1
+A mensagem do dia é: Bom dia
+
+-- ANÁLISE --
+O servidor cria uma memória compartilhada usando shmget() com IPC_PRIVATE, que gera um identificador único. 
+
+A mensagem digitada pelo usuário é salva na memória compartilhada através de shmat(). O cliente se conecta à mesma memória usando o ID fornecido pelo servidor e lê a mensagem. 
+
+Isso demonstra como processos diferentes podem compartilhar dados através de memória compartilhada, resolvendo o problema do lab anterior onde pai e filho não conseguiam compartilhar variáveis.
+
+Exercício 3) Busca Paralela em Vetor
+
+-- ARQUIVOS --
+- ex3/busca_paralela.c: Programa que implementa busca paralela com 4 processos
+
+-- COMPILAÇÃO E EXECUÇÃO -- 
+gcc -o ex3 ex3.c
+./ex3
+
+-- OUTPUT --
+13 16 27 25 23 25 16 12 9 1 2 7 20 19 23 16 0 6 22 16 
+procurando: 16
+processo 1 achou na pos 1
+processo 2 achou na pos 6
+processo 4 achou na pos 15
+
+-- ANÁLISE --
+O programa cria uma memória compartilhada com um vetor de 20 números inteiros aleatórios. Em seguida, cria 4 processos filhos usando fork(), onde cada processo é responsável por procurar o número 16 em uma parte específica do vetor. 
+
+O processo 1 procura nas posições 0-4, o processo 2 nas posições 5-9, o processo 3 nas posições 10-14 e o processo 4 nas posições 15-19. 
+
+Como todos os processos acessam a mesma memória compartilhada, eles podem ler o vetor completo, mas cada um procura apenas em sua área designada. 
+
+O resultado mostra que o número 16 foi encontrado nas posições 1, 6 e 15 por diferentes processos, demonstrando a eficiência da busca paralela.
