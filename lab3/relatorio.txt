@@ -10,3 +10,64 @@ Exercício 1) Programa ctrl-c.c
 ctrl-c.c: Programa que instala tratadores para os sinais SIGINT (Ctrl-C) e SIGQUIT (Ctrl-\).
 
 -- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o ctrl-c ctrl-c.c
+./ctrl-c
+
+Durante a execução:
+
+Ao apertar Ctrl-C, o programa não termina e apenas imprime a mensagem configurada no tratador.
+
+Ao apertar Ctrl-\, o programa chama o tratador de SIGQUIT, imprime a mensagem de encerramento e termina.
+
+-- OUTPUT --
+
+Endereco do manipulador anterior (nil)
+Endereco do manipulador anterior (nil)
+Ctrl-C desabilitado. Use Ctrl-\ para terminar
+Você pressionou Ctrl-C (2)
+Você pressionou Ctrl-C (2)
+Terminando o processo...
+
+-- TESTE SEM OS signal() --
+Depois de remover as linhas com signal(SIGINT, intHandler); e signal(SIGQUIT, quitHandler);, o comportamento mudou:
+
+Ctrl-C finaliza o processo imediatamente (tratamento padrão do sistema).
+
+Ctrl-\ também finaliza o processo, mas sem imprimir nada (tratamento padrão de SIGQUIT).
+
+-- ANÁLISE --
+Esse experimento mostrou que ao instalar tratadores com signal() conseguimos controlar o que acontece quando sinais são enviados ao processo.
+
+Com tratadores: o programa ignora o comportamento padrão e executa o código definido nas funções (intHandler e quitHandler).
+
+Sem tratadores: o sistema operacional aplica a ação default dos sinais (terminar o processo).
+
+Exercício 2) Interceptar SIGKILL
+
+-- ARQUIVO --
+
+sigkill.c: Programa que tenta instalar um tratador para o sinal SIGKILL.
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o sigkill sigkill.c
+./sigkill
+
+No terminal aparece a mensagem informando que não foi possível instalar o tratador.
+Mesmo assim, deixamos o programa rodando em loop infinito e tentamos finalizar o processo com:
+
+kill -9 <pid>
+
+O processo foi encerrado na hora, sem imprimir nada do handler.
+
+-- OUTPUT --
+
+Não foi possível instalar tratador para SIGKILL.
+Processo rodando... tente matar com kill -9 <pid>
+[processo termina imediatamente]
+
+-- ANÁLISE --
+O teste mostrou que não é possível capturar, ignorar ou tratar SIGKILL.
+Esse sinal é reservado pelo kernel para garantir que o processo realmente será terminado, sem chance de recuperação.
+Apenas sinais como SIGINT, SIGQUIT, SIGUSR1, etc., podem ter tratadores definidos.
