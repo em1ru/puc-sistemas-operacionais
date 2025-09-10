@@ -1,0 +1,12 @@
+RELATÓRIO - LAB 03
+
+Gabriel Valente – 2310488
+Gabriel Emile – 2220498
+
+Exercício 1) Programa ctrl-c.c
+
+-- ARQUIVO --
+
+ctrl-c.c: Programa que instala tratadores para os sinais SIGINT (Ctrl-C) e SIGQUIT (Ctrl-\).
+
+-- COMPILAÇÃO E EXECUÇÃO --
