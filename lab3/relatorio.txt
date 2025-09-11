@@ -37,6 +37,7 @@ Ctrl-C finaliza o processo imediatamente (tratamento padrão do sistema).
 Ctrl-\ também finaliza o processo, mas sem imprimir nada (tratamento padrão de SIGQUIT).
 
 -- ANÁLISE --
+
 Esse experimento mostrou que ao instalar tratadores com signal() conseguimos controlar o que acontece quando sinais são enviados ao processo.
 
 Com tratadores: o programa ignora o comportamento padrão e executa o código definido nas funções (intHandler e quitHandler).
@@ -68,6 +69,49 @@ Processo rodando... tente matar com kill -9 <pid>
 [processo termina imediatamente]
 
 -- ANÁLISE --
+
 O teste mostrou que não é possível capturar, ignorar ou tratar SIGKILL.
 Esse sinal é reservado pelo kernel para garantir que o processo realmente será terminado, sem chance de recuperação.
 Apenas sinais como SIGINT, SIGQUIT, SIGUSR1, etc., podem ter tratadores definidos.
+
+Exercício 3) Programa filhocidio.c
+
+-- ARQUIVOS --
+
+filhocidio.c: Programa que executa um outro a partir de um filho e espera determinado tempo para que o programa filho termine. 
+Se o programa filho não terminar, o pai mata o filho. 
+
+sleep5.c e sleep15.c: Programas simples que serão executados pelos filhos criados em filhocidio.c, cujos objetivos são apenas imprimir mensagens no console antes e depois de um sleep de 5 ou de 15 segundos. 
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o filhocidio filhocidio.c
+gcc -o sleep5 sleep5.c
+gcc -o sleep15 sleep15.c
+./filhocidio 10 ./sleep5
+./filhocidio 10 ./sleep15
+
+-- OUTPUT --
+
+$ ./filhocidio 10 ./sleep5
+    indo dormir...
+    Acordei!
+    Child 213 terminated within 10 seconds com estado 0.
+$ ./filhocidio 10 ./sleep15
+    indo dormir...
+    Program ./sleep15 exceeded limit of 10 seconds!
+    Child 215 terminated within 10 seconds com estado 9.
+
+-- ANÁLISE --
+
+O código demonstra uma relação de controle entre um processo pai e um filho, 
+onde o resultado depende de uma "corrida" contra o tempo. Se o processo filho
+consegue completar sua tarefa e terminar antes do tempo limite definido pelo pai, 
+o sistema reporta uma saída bem-sucedida com estado 0. Contudo, se o tempo do pai
+se esgota primeiro, ele encerra o filho à força através de um sinal SIGKILL,
+resultando em uma saída com estado 9, indicando que o filho foi "assassinado" por
+exceder o prazo e não conseguiu finalizar sua execução. Como o programa sleep15 leva um 
+tempo de 15 segundos > 10 segundos, ele é finalizado antes de completar sua execução, 
+não havendo a impressão na tela do segundo printf. Analogamente, como 5 < 10, o programa sleep5
+conclui sua execução a tempo antes de ser interrompido pelo pai, sendo portanto realizado o printf 
+pós sleep. 
