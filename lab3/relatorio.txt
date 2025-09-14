@@ -115,3 +115,96 @@ tempo de 15 segundos > 10 segundos, ele é finalizado antes de completar sua exe
 não havendo a impressão na tela do segundo printf. Analogamente, como 5 < 10, o programa sleep5
 conclui sua execução a tempo antes de ser interrompido pelo pai, sendo portanto realizado o printf 
 pós sleep. 
+
+Claro! Perfeito. Seguindo a estrutura do seu relatório, aqui está a seção para o exercício que acabamos de desenvolver.
+
+Exercício 4) Programa alternador.c
+
+-- ARQUIVO --
+alternador.c: Programa que demonstra o controle de processos usando sinais. O processo pai cria dois processos filhos, cada um executando um loop infinito que imprime mensagens na tela. O pai atua como um escalonador simples, utilizando os sinais SIGSTOP e SIGCONT para alternar a execução entre os dois filhos. Após 10 trocas de contexto, o pai encerra ambos os filhos com o sinal SIGKILL.
+
+-- COMPILAÇÃO E EXECUÇÃO --
+gcc -o alternador alternador.c
+./alternador
+
+Durante a execução, será possível observar blocos de mensagens do "filho 0" e do "filho 1" aparecendo de forma alternada no terminal. Entre cada bloco, o processo pai imprime uma mensagem indicando qual filho está parando e qual está continuando, tornando a troca de contexto explícita.
+
+-- OUTPUT --
+[pai] filho 0 (PID: 429) criado.
+filho 0 vivo!
+[pai] filho 1 (PID: 430) criado.
+filho 1 vivo!
+filho 0 vivo!
+[PAI] Pausando ambos os filhos para sincronizar...
+[PAI] Começando troca de contexto...
+[PAI] Filho 0 acordado, filho 1 parado
+
+filho 0 vivo!
+
+[PAI] Parando filho 0, continuando filho 1... (0)
+
+filho 1 vivo!
+filho 1 vivo!
+
+[PAI] Parando filho 1, continuando filho 0... (1)
+
+filho 0 vivo!
+filho 0 vivo!
+
+[PAI] Parando filho 0, continuando filho 1... (2)
+
+filho 1 vivo!
+filho 1 vivo!
+
+[PAI] Parando filho 1, continuando filho 0... (3)
+
+filho 0 vivo!
+filho 0 vivo!
+
+[PAI] Parando filho 0, continuando filho 1... (4)
+
+filho 1 vivo!
+filho 1 vivo!
+
+[PAI] Parando filho 1, continuando filho 0... (5)
+
+filho 0 vivo!
+filho 0 vivo!
+
+[PAI] Parando filho 0, continuando filho 1... (6)
+
+filho 1 vivo!
+filho 1 vivo!
+
+[PAI] Parando filho 1, continuando filho 0... (7)
+
+filho 0 vivo!
+filho 0 vivo!
+
+[PAI] Parando filho 0, continuando filho 1... (8)
+
+filho 1 vivo!
+filho 1 vivo!
+
+filho 1 vivo!
+[PAI] Parando filho 1, continuando filho 0... (9)
+
+filho 0 vivo!
+
+[PAI] Fim das trocas. Matando os filhos.
+[PAI] Filho 0 (PID: 429) morto          AAAAAAAAAAAAAA (gritos ao fundo).
+[PAI] Filho 1 (PID: 430) morto.
+[PAI] Processo encerrado.
+
+-- ANÁLISE --
+Este experimento demonstra o poder dos sinais para o controle e gerenciamento de processos. Através dos sinais SIGSTOP e SIGCONT, um processo pai pode orquestrar a execução de seus filhos de maneira precisa, funcionando como um escalonador externo rudimentar.
+
+A estratégia principal foi:
+
+Criação e Pausa Imediata: O pai cria os filhos e, para garantir o controle total e um ponto de partida sincronizado, envia SIGSTOP para ambos imediatamente. Isso os coloca em um estado "Parado" (Stopped) antes que possam executar seu loop.
+
+Alternância Controlada: O pai então entra em um loop onde, a cada iteração, ele "acorda" um filho com SIGCONT e "adormece" o outro com SIGSTOP. Isso garante que apenas um filho consuma recursos da CPU por vez.
+
+Término Forçado: Ao final, o pai usa SIGKILL (kill -9), confirmando o que vimos no Exercício 2: um sinal que não pode ser ignorado e que garante o término imediato dos processos filhos.
+
+O resultado é uma simulação clara de troca de contexto, um conceito fundamental em sistemas operacionais, implementado manualmente através do sistema de sinais do Unix.
