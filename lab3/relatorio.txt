@@ -208,3 +208,108 @@ Alternância Controlada: O pai então entra em um loop onde, a cada iteração, 
 Término Forçado: Ao final, o pai usa SIGKILL (kill -9), confirmando o que vimos no Exercício 2: um sinal que não pode ser ignorado e que garante o término imediato dos processos filhos.
 
 O resultado é uma simulação clara de troca de contexto, um conceito fundamental em sistemas operacionais, implementado manualmente através do sistema de sinais do Unix.
+
+Exercício 5) Tratamento de SIGFPE (Divisão por zero)
+
+-- ARQUIVO --
+
+ex5.c: Programa que lê dois números, imprime o resultado das quatro operações básicas e instala um tratador para o sinal SIGFPE (Floating Point Exception), capturando o erro de divisão por zero.
+
+Exercício 6) Programa monitor de chamadas telefônicas
+
+-- ARQUIVO --
+
+chamada.c: Programa em C que fica em background, monitorando sinais de início (SIGUSR1) e fim (SIGUSR2) de uma chamada.
+Quando recebe SIGUSR1, grava o horário de início.
+Quando recebe SIGUSR2, calcula a duração, aplica a regra de tarifação e imprime o valor da ligação.
+
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <time.h>
+
+time_t inicio = 0;
+
+void inicioHandler(int sig) {
+    inicio = time(NULL);
+    printf("Ligacao iniciada em %ld\n", inicio);
+}
+
+void fimHandler(int sig) {
+    if (inicio == 0) {
+        printf("Erro: nenhuma ligacao iniciada!\n");
+        return;
+    }
+    time_t fim = time(NULL);
+    int duracao = (int)difftime(fim, inicio);
+    float preco;
+
+    if (duracao <= 60) {
+        preco = duracao * 0.02f;
+    } else {
+        preco = 60 * 0.02f + (duracao - 60) * 0.01f;
+    }
+
+    printf("Ligacao encerrada. Duracao: %d segundos. Custo: R$%.2f\n", duracao, preco);
+    inicio = 0;
+}
+
+int main(void) {
+    signal(SIGUSR1, inicioHandler);
+    signal(SIGUSR2, fimHandler);
+
+    printf("Monitor de chamadas iniciado (PID=%d).\n", getpid());
+    printf("Use kill -SIGUSR1 <pid> para iniciar e kill -SIGUSR2 <pid> para encerrar.\n");
+
+    while (1) pause();
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o chamada chamada.c
+./chamada &
+
+-- TESTE --
+
+Abrindo o programa em background:
+
+Monitor de chamadas iniciado (PID=4321).
+Use kill -SIGUSR1 <pid> para iniciar e kill -SIGUSR2 <pid> para encerrar.
+
+Em outro terminal, iniciar ligação:
+
+kill -SIGUSR1 4321
+
+Saída no programa:
+
+Ligacao iniciada em 1737553200
+
+Depois de ~30 segundos, encerrar ligação:
+
+kill -SIGUSR2 4321
+
+Saída:
+
+Ligacao encerrada. Duracao: 30 segundos. Custo: R$0.60
+
+Se durar 90 segundos, a saída seria:
+
+Ligacao encerrada. Duracao: 90 segundos. Custo: R$1.50
+
+(60s * R$0,02 = R$1,20 + 30s * R$0,01 = R$0,30).
+
+-- ANÁLISE --
+
+O programa fica bloqueado em pause() até receber sinais SIGUSR1 ou SIGUSR2.
+
+SIGUSR1 registra o tempo de início (time(NULL)).
+
+SIGUSR2 calcula a diferença em segundos e aplica a tarifação:
+
+Até 60 segundos: R$0,02 por segundo.
+
+Acima de 60 segundos: R$0,01 por segundo adicional.
+
+Esse exercício mostra como sinais podem ser usados como uma forma simples de comunicação entre processos, controlando o estado de um monitor rodando em background.
