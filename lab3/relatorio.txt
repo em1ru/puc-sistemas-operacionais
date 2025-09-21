@@ -313,3 +313,138 @@ Até 60 segundos: R$0,02 por segundo.
 Acima de 60 segundos: R$0,01 por segundo adicional.
 
 Esse exercício mostra como sinais podem ser usados como uma forma simples de comunicação entre processos, controlando o estado de um monitor rodando em background.
+
+Exercício 7) Escalonador Round-Robin com sinais
+
+-- ARQUIVOS --
+
+io1.c, io2.c, io3.c: cada um é um processo I/O bound que fica em loop infinito imprimindo mensagens.
+
+escalonador.c: programa principal que cria os três processos filhos, controla a execução enviando sinais SIGSTOP e SIGCONT, simulando escalonamento Round-Robin.
+
+io1.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main(void) {
+    while (1) {
+        printf("[io1] rodando...\n");
+        sleep(1);
+    }
+    return 0;
+}
+
+
+io2.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main(void) {
+    while (1) {
+        printf("[io2] rodando...\n");
+        sleep(1);
+    }
+    return 0;
+}
+
+
+io3.c
+
+#include <stdio.h>
+#include <unistd.h>
+
+int main(void) {
+    while (1) {
+        printf("[io3] rodando...\n");
+        sleep(1);
+    }
+    return 0;
+}
+
+escalonador.c
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+
+int main(void) {
+    pid_t filhos[3];
+    char *progs[3] = {"./io1", "./io2", "./io3"};
+
+    for (int i = 0; i < 3; i++) {
+        if ((filhos[i] = fork()) == 0) {
+            execl(progs[i], progs[i], NULL);
+            exit(1);
+        }
+    }
+
+    // Pausa todos os filhos logo após criar
+    for (int i = 0; i < 3; i++) {
+        kill(filhos[i], SIGSTOP);
+    }
+
+    printf("[pai] Escalonador iniciado. PIDs: %d %d %d\n",
+           filhos[0], filhos[1], filhos[2]);
+
+    int turno = 0;
+    while (1) {
+        // acorda o filho da vez
+        kill(filhos[turno], SIGCONT);
+
+        if (turno == 0)
+            sleep(1); // quantum do primeiro filho
+        else
+            sleep(2); // quantum dos outros filhos
+
+        // pausa o filho da vez
+        kill(filhos[turno], SIGSTOP);
+
+        // passa para o próximo (0→1→2→0...)
+        turno = (turno + 1) % 3;
+    }
+
+    // nunca chega aqui, mas por formalidade
+    for (int i = 0; i < 3; i++) {
+        kill(filhos[i], SIGKILL);
+    }
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o io1 io1.c
+gcc -o io2 io2.c
+gcc -o io3 io3.c
+gcc -o escalonador escalonador.c
+
+./escalonador
+
+-- OUTPUT (trecho típico)
+
+[pai] Escalonador iniciado. PIDs: 1234 1235 1236
+[io1] rodando...
+[io1] rodando...
+[io2] rodando...
+[io2] rodando...
+[io2] rodando...
+[io3] rodando...
+[io3] rodando...
+[io3] rodando...
+[io1] rodando...
+[io1] rodando...
+
+Percebe-se que o processo io1 fica ativo por 1 segundo, enquanto io2 e io3 ficam ativos por 2 segundos cada, em ciclos.
+
+-- ANÁLISE --
+
+O escalonador age como um mini-sistema operacional: cria os filhos, pausa todos imediatamente, e depois vai alternando com SIGSTOP/SIGCONT.
+
+O quantum foi configurado conforme o enunciado: 1 segundo para o primeiro filho e 2 segundos para os outros.
+
+Na execução, vemos que os programas io1, io2 e io3 nunca rodam ao mesmo tempo, mas em blocos alternados.
+
+Isso simula o escalonamento Round-Robin com fatias de tempo diferentes, mostrando como sinais podem ser usados para implementar uma forma primitiva de time-sharing.
