@@ -1,0 +1,21 @@
+$ ./ex4
+[escritor] pai escreveu
+[escritor] pai escreveu
+[leitor 2] filho 2 leu: B
+[leitor 1] filho 1 leu: A
+[escritor] pai escreveu
+[escritor] pai escreveu
+[escritor] pai escreveu
+[escritor] pai escreveu
+[leitor 1] filho 1 leu: A
+[leitor 2] filho 2 leu: B
+[escritor] pai escreveu
+[escritor] pai escreveu
+[escritor] pai escreveu
+[escritor] pai escreveu
+[leitor 2] filho 2 leu: A
+[leitor 1] filho 1 leu: B
+[leitor 1] filho 1 leu: A
+[leitor 2] filho 2 leu: B
+[leitor 2] filho 2 leu: A
+[leitor 1] filho 1 leu: B
