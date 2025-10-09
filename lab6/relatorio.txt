@@ -1,0 +1,470 @@
+RELATÓRIO - LAB 06
+
+Gabriel Valente – 2310488
+Gabriel Emile – 2220498
+
+Exercício 1) Comunicação entre Terminais via FIFO
+
+-- ARQUIVOS --
+
+leitor.c: Programa que cria uma FIFO e fica em loop lendo mensagens dela, exibindo na tela conforme chegam.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO "minhaFifo"
+
+int main() {
+    int fd;
+    char ch;
+    
+    // cria a FIFO se nao existe
+    if (access(FIFO, F_OK) == -1) {
+        if (mkfifo(FIFO, S_IRUSR | S_IWUSR) == -1) {
+            perror("mkfifo");
+            exit(1);
+        }
+        printf("FIFO criada\n");
+    }
+    
+    printf("Aguardando mensagens...\n");
+    
+    // loop infinito lendo da FIFO
+    while (1) {
+        fd = open(FIFO, O_RDONLY);
+        if (fd == -1) {
+            perror("open");
+            exit(1);
+        }
+        
+        // le caractere por caractere e mostra na tela
+        while (read(fd, &ch, sizeof(ch)) > 0) {
+            putchar(ch);
+        }
+        
+        close(fd);
+    }
+    
+    return 0;
+}
+
+escritor.c: Programa que lê mensagens do teclado (stdin) e as escreve na FIFO para serem lidas pelo processo leitor.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO "minhaFifo"
+
+int main() {
+    int fd;
+    char msg[256];
+    
+    // cria a FIFO se nao existe
+    if (access(FIFO, F_OK) == -1) {
+        if (mkfifo(FIFO, S_IRUSR | S_IWUSR) == -1) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    
+    printf("Digite mensagens (Ctrl+D para sair):\n");
+    
+    // le do teclado e escreve na FIFO
+    while (fgets(msg, sizeof(msg), stdin) != NULL) {
+        fd = open(FIFO, O_WRONLY);
+        if (fd == -1) {
+            perror("open");
+            exit(1);
+        }
+        
+        write(fd, msg, strlen(msg));
+        close(fd);
+    }
+    
+    printf("\nEncerrando...\n");
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o leitor ex1/leitor.c
+gcc -o escritor ex1/escritor.c
+
+Terminal 1:
+./leitor
+
+Terminal 2:
+./escritor
+
+-- OUTPUT --
+
+Terminal 1 (leitor):
+FIFO criada
+Aguardando mensagens...
+ola mundo
+teste de fifo
+comunicacao entre processos
+
+Terminal 2 (escritor):
+Digite mensagens (Ctrl+D para sair):
+ola mundo
+teste de fifo
+comunicacao entre processos
+^D
+Encerrando...
+
+-- ANÁLISE --
+
+Este exercício demonstra a comunicação entre processos através de FIFO (Named Pipe), que diferentemente de pipes anônimos, possuem um nome no sistema de arquivos e podem conectar processos não relacionados.
+
+1. `mkfifo()`: Cria um arquivo especial do tipo FIFO no sistema de arquivos. A função recebe o nome da FIFO e as permissões (S_IRUSR | S_IWUSR = leitura e escrita para o usuário). Retorna 0 em caso de sucesso, -1 em caso de erro.
+
+2. `access()`: Verifica se a FIFO já existe antes de tentar criá-la. Isso evita erros quando múltiplos processos tentam criar a mesma FIFO.
+
+3. Bloqueio no `open()`: Quando o leitor chama `open(FIFO, O_RDONLY)`, a chamada bloqueia até que algum processo abra a mesma FIFO para escrita. Da mesma forma, o escritor bloqueia em `open(FIFO, O_WRONLY)` até que haja um leitor. Isso garante a sincronização entre os processos.
+
+4. Transferência de Dados: Após ambas as extremidades estarem abertas, o escritor usa `write()` para enviar dados e o leitor usa `read()` para recebê-los. Os dados não são armazenados em disco - o kernel gerencia a transferência internamente.
+
+5. Loop de Leitura: O leitor reabre a FIFO a cada ciclo porque quando o escritor fecha sua ponta (`close(fd)`), o `read()` retorna 0 (EOF), indicando fim de arquivo. Para continuar recebendo mensagens, é necessário reabrir.
+
+Exercício 2) Processos Filhos Escrevendo na Mesma FIFO
+
+-- ARQUIVO --
+
+ex2.c: Programa que demonstra múltiplos escritores em uma FIFO. O processo pai cria uma FIFO e dois processos filhos, cada um escrevendo uma mensagem diferente. Após os filhos terminarem, o pai lê todas as mensagens.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/wait.h>
+
+#define FIFO "fifoEx2"
+
+int main() {
+    int fd;
+    pid_t pid1, pid2;
+    char buffer[256];
+    int n;
+    
+    // cria a FIFO
+    if (access(FIFO, F_OK) == -1) {
+        if (mkfifo(FIFO, S_IRUSR | S_IWUSR) == -1) {
+            perror("mkfifo");
+            exit(1);
+        }
+    }
+    
+    // cria primeiro filho
+    pid1 = fork();
+    if (pid1 == 0) {
+        // primeiro filho escreve mensagem
+        sleep(1); // espera um pouco
+        fd = open(FIFO, O_WRONLY);
+        char *msg1 = "Mensagem do filho 1\n";
+        write(fd, msg1, strlen(msg1));
+        close(fd);
+        exit(0);
+    }
+    
+    // cria segundo filho
+    pid2 = fork();
+    if (pid2 == 0) {
+        // segundo filho escreve mensagem
+        sleep(1); // espera um pouco
+        fd = open(FIFO, O_WRONLY);
+        char *msg2 = "Mensagem do filho 2\n";
+        write(fd, msg2, strlen(msg2));
+        close(fd);
+        exit(0);
+    }
+    
+    // pai espera os filhos terminarem
+    waitpid(pid1, NULL, 0);
+    waitpid(pid2, NULL, 0);
+    
+    printf("Filhos terminaram, lendo mensagens da FIFO:\n");
+    
+    // pai abre e le da FIFO
+    fd = open(FIFO, O_RDONLY);
+    if (fd == -1) {
+        perror("open");
+        exit(1);
+    }
+    
+    // le e imprime tudo
+    while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
+        write(1, buffer, n); // escreve na tela
+    }
+    
+    close(fd);
+    
+    // remove a FIFO
+    unlink(FIFO);
+    
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o ex2 ex2/ex2.c
+./ex2
+
+-- OUTPUT --
+
+Filhos terminaram, lendo mensagens da FIFO:
+Mensagem do filho 1
+Mensagem do filho 2
+
+-- ANÁLISE --
+
+Este exercício explora o comportamento de FIFOs com múltiplos escritores e demonstra o uso de sincronização através de `waitpid()`.
+
+1. Criação dos Filhos: O pai usa `fork()` duas vezes para criar dois processos filhos. Cada filho herda uma cópia do código do pai, mas executa apenas o bloco condicional correspondente (`if (pid == 0)`).
+
+2. `sleep(1)`: Os filhos dormem por 1 segundo para dar tempo do pai criar ambos os processos e preparar-se para a leitura. Sem essa pausa, poderia haver condições de corrida onde os filhos tentam abrir a FIFO antes que o leitor esteja pronto.
+
+3. Múltiplos Escritores: Ambos os filhos abrem a mesma FIFO para escrita. O sistema operacional permite isso e serializa as escritas automaticamente. Se as mensagens forem pequenas (menores que PIPE_BUF, tipicamente 4096 bytes), cada `write()` é atômico.
+
+4. `waitpid()`: O pai chama `waitpid()` para cada filho, bloqueando até que o processo filho especificado termine. Isso garante que todas as mensagens foram escritas na FIFO antes do pai começar a ler. Se o pai lesse antes dos filhos terminarem, poderia perder mensagens.
+
+5. Leitura Única: Após os filhos terminarem e fecharem seus descritores de escrita, o pai abre a FIFO para leitura. Como não há mais escritores, quando o buffer está vazio, `read()` retorna 0, indicando EOF, e o loop termina.
+
+6. `unlink()`: Remove a FIFO do sistema de arquivos após o uso. É uma boa prática de limpeza, embora a FIFO persista até ser explicitamente removida.
+
+Exercício 3) Cliente-Servidor com Comunicação Bidirecional
+
+-- ARQUIVOS --
+
+servidor.c: Programa servidor que aguarda mensagens dos clientes através de uma FIFO, converte o texto para MAIÚSCULAS e envia a resposta através de outra FIFO.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+#include <ctype.h>
+
+#define FIFO_CLIENT_TO_SERVER "fifo_c2s"
+#define FIFO_SERVER_TO_CLIENT "fifo_s2c"
+
+int main() {
+    int fd_read, fd_write;
+    char buffer[256];
+    int n, i;
+    
+    // cria as FIFOs se nao existem
+    if (access(FIFO_CLIENT_TO_SERVER, F_OK) == -1) {
+        if (mkfifo(FIFO_CLIENT_TO_SERVER, S_IRUSR | S_IWUSR) == -1) {
+            perror("mkfifo cliente->servidor");
+            exit(1);
+        }
+    }
+    
+    if (access(FIFO_SERVER_TO_CLIENT, F_OK) == -1) {
+        if (mkfifo(FIFO_SERVER_TO_CLIENT, S_IRUSR | S_IWUSR) == -1) {
+            perror("mkfifo servidor->cliente");
+            exit(1);
+        }
+    }
+    
+    printf("Servidor rodando...\n");
+    
+    // loop infinito esperando mensagens
+    while (1) {
+        // abre FIFO para ler do cliente
+        fd_read = open(FIFO_CLIENT_TO_SERVER, O_RDONLY);
+        if (fd_read == -1) {
+            perror("open read");
+            exit(1);
+        }
+        
+        // le mensagem do cliente
+        n = read(fd_read, buffer, sizeof(buffer) - 1);
+        if (n > 0) {
+            buffer[n] = '\0';
+            printf("Recebido: %s", buffer);
+            
+            // converte para maiusculas
+            for (i = 0; i < n; i++) {
+                buffer[i] = toupper(buffer[i]);
+            }
+            
+            printf("Enviando: %s", buffer);
+            
+            // abre FIFO para escrever resposta
+            fd_write = open(FIFO_SERVER_TO_CLIENT, O_WRONLY);
+            if (fd_write == -1) {
+                perror("open write");
+                close(fd_read);
+                continue;
+            }
+            
+            // envia resposta
+            write(fd_write, buffer, n);
+            close(fd_write);
+        }
+        
+        close(fd_read);
+    }
+    
+    return 0;
+}
+
+cliente.c: Programa cliente que envia mensagens para o servidor através de uma FIFO e recebe as respostas processadas através de outra FIFO.
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_CLIENT_TO_SERVER "fifo_c2s"
+#define FIFO_SERVER_TO_CLIENT "fifo_s2c"
+
+int main() {
+    int fd_write, fd_read;
+    char msg[256];
+    char resposta[256];
+    int n;
+    
+    // verifica se as FIFOs existem
+    if (access(FIFO_CLIENT_TO_SERVER, F_OK) == -1) {
+        printf("Erro: servidor nao esta rodando\n");
+        exit(1);
+    }
+    
+    printf("Cliente conectado. Digite mensagens:\n");
+    
+    // le mensagens do teclado
+    while (fgets(msg, sizeof(msg), stdin) != NULL) {
+        // abre FIFO para escrever pro servidor
+        fd_write = open(FIFO_CLIENT_TO_SERVER, O_WRONLY);
+        if (fd_write == -1) {
+            perror("open write");
+            exit(1);
+        }
+        
+        // envia mensagem
+        write(fd_write, msg, strlen(msg));
+        close(fd_write);
+        
+        // abre FIFO para ler resposta do servidor
+        fd_read = open(FIFO_SERVER_TO_CLIENT, O_RDONLY);
+        if (fd_read == -1) {
+            perror("open read");
+            exit(1);
+        }
+        
+        // le resposta
+        n = read(fd_read, resposta, sizeof(resposta) - 1);
+        if (n > 0) {
+            resposta[n] = '\0';
+            printf("Resposta: %s", resposta);
+        }
+        
+        close(fd_read);
+    }
+    
+    printf("\nEncerrando cliente...\n");
+    return 0;
+}
+
+-- COMPILAÇÃO E EXECUÇÃO --
+
+gcc -o servidor ex3/servidor.c
+gcc -o cliente ex3/cliente.c
+
+Terminal 1 (servidor):
+./servidor
+
+Terminal 2 (cliente 1):
+./cliente
+
+Terminal 3 (cliente 2 - opcional):
+./cliente
+
+-- OUTPUT --
+
+Terminal 1 (servidor):
+Servidor rodando...
+Recebido: hello world
+Enviando: HELLO WORLD
+Recebido: teste de comunicacao
+Enviando: TESTE DE COMUNICACAO
+Recebido: sistemas operacionais
+Enviando: SISTEMAS OPERACIONAIS
+
+Terminal 2 (cliente):
+Cliente conectado. Digite mensagens:
+hello world
+Resposta: HELLO WORLD
+teste de comunicacao
+Resposta: TESTE DE COMUNICACAO
+sistemas operacionais
+Resposta: SISTEMAS OPERACIONAIS
+^D
+Encerrando cliente...
+
+-- ANÁLISE --
+
+Este exercício implementa uma arquitetura cliente-servidor usando duas FIFOs para comunicação bidirecional, resolvendo o problema de que um processo não deve abrir a mesma FIFO para leitura e escrita simultaneamente.
+
+1. Duas FIFOs: O design usa duas FIFOs unidirecionais:
+   - `fifo_c2s` (cliente → servidor): Para requisições dos clientes
+   - `fifo_s2c` (servidor → cliente): Para respostas do servidor
+   
+   Isso evita conflitos e permite comunicação full-duplex sem deadlocks.
+
+2. Servidor como Daemon: O servidor roda em um loop infinito (`while(1)`), processando requisições continuamente. Ele:
+   - Abre a FIFO de requisições em modo de leitura (bloqueia até um cliente enviar dados)
+   - Lê a mensagem
+   - Processa (converte para maiúsculas usando `toupper()`)
+   - Abre a FIFO de respostas em modo de escrita
+   - Envia a resposta
+   - Fecha ambos os descritores e aguarda a próxima requisição
+
+3. Protocolo Request-Response: O cliente segue um padrão síncrono:
+   - Envia mensagem → fecha descritor de escrita
+   - Abre descritor de leitura → aguarda resposta
+   - Recebe resposta → fecha descritor de leitura
+   
+   Esse padrão garante que cada requisição tenha sua resposta correspondente.
+
+4. `toupper()`: Função da biblioteca `<ctype.h>` que converte um caractere para maiúscula. O loop `for` aplica a conversão em cada byte da mensagem.
+
+5. Múltiplos Clientes: O design suporta múltiplos clientes simultâneos, mas há uma limitação importante: a FIFO de resposta (`fifo_s2c`) é compartilhada. Se dois clientes enviarem mensagens simultaneamente, suas respostas podem ser misturadas. Uma solução profissional usaria uma FIFO exclusiva por cliente ou um protocolo de identificação.
+
+6. Verificação de Servidor: O cliente verifica se `fifo_c2s` existe antes de tentar se conectar, usando isso como indicador de que o servidor está rodando. Se a FIFO não existe, o cliente termina com uma mensagem de erro.
+
+7. Sincronização Implícita: O bloqueio em `open()` e `read()` fornece sincronização natural. Quando não há clientes, o servidor bloqueia em `open(O_RDONLY)`. Quando não há resposta pronta, o cliente bloqueia em `open(O_RDONLY)`.
+
+-- CONCLUSÃO GERAL --
+
+Os exercícios deste laboratório demonstram o uso de FIFOs (Named Pipes) para comunicação entre processos no Linux. As principais diferenças em relação aos pipes anônimos (Lab 04) são:
+
+1. Persistência: FIFOs têm um nome no sistema de arquivos e persistem até serem removidas com `unlink()` ou `rm`.
+
+2. Processos Não Relacionados: Enquanto pipes anônimos só funcionam entre processos pai-filho, FIFOs permitem comunicação entre quaisquer processos que conheçam o nome da FIFO.
+
+3. Criação: FIFOs são criadas com `mkfifo()` (função ou comando shell), não com `pipe()`.
+
+4. Uso: Após criadas, FIFOs são usadas exatamente como pipes - através de `open()`, `read()`, `write()` e `close()`.
+
+5. Bloqueio: O `open()` bloqueia até que ambas as extremidades (leitura e escrita) estejam abertas, sincronizando automaticamente os processos.
+
+6. Limitações: Um processo não deve abrir a mesma FIFO para leitura e escrita. Para comunicação bidirecional, usa-se duas FIFOs.
+
+As FIFOs são fundamentais em sistemas Unix/Linux para implementar comunicação inter-processo (IPC), especialmente em arquiteturas cliente-servidor e pipelines de processamento distribuídos.
