@@ -1,0 +1,28 @@
+# Arquivos compilados
+*.o
+*.out
+*.exe
+os_simulator
+
+# Arquivos de debug
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Core dumps
+core
+core.*
+
+# Arquivos temporários
+*~
+*.swp
+*.swo
+.DS_Store
+
+# Arquivos do VS Code
+.vscode/
+*.code-workspace
+
+# Arquivos de log
+*.log

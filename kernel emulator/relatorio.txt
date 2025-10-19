@@ -1,0 +1,153 @@
+RELATÓRIO - SIMULADOR DE SISTEMA OPERACIONAL
+
+Gabriel Valente – 2310488
+Gabriel Emile – 2220498
+
+==============================================================================
+
+1. INTRODUÇÃO
+
+Este trabalho implementa um simulador de sistema operacional preemptivo em C.
+O objetivo é demonstrar conceitos de escalonamento, gerenciamento de processos,
+e tratamento de interrupções usando processos reais do Unix.
+
+==============================================================================
+
+2. ARQUITETURA
+
+O simulador é composto por 7 processos:
+
+- 1 Emulador: processo principal que cria os outros
+- 1 KernelSim: implementa o escalonador e gerenciador de processos
+- 1 InterControllerSim: gera interrupções de timer e I/O
+- 5 Processos A1 a A5: simulam programas de usuário
+
+Comunicação:
+- Sinais Unix: SIGSTOP, SIGCONT, SIGUSR1, SIGUSR2
+- Pipes: para syscalls de I/O
+
+==============================================================================
+
+3. IMPLEMENTAÇÃO
+
+3.1 Emulador (emulator.c)
+O processo raiz cria todos os outros processos usando fork(). Configura os
+pipes para comunicação e aguarda todos finalizarem.
+
+3.2 KernelSim (kernel.c)
+Implementa:
+- Escalonamento Round Robin com quantum de 2 segundos
+- Tabela de PCBs (Process Control Blocks)
+- Fila de processos prontos
+- Bloqueio/desbloqueio para I/O
+- Tratamento de interrupções
+
+Estados dos processos: READY, RUNNING, BLOCKED, FINISHED
+
+3.3 InterControllerSim (interruptionController.c)
+Gera interrupções periodicamente:
+- Timer: a cada 2 segundos
+- I/O: aleatoriamente (30% de chance)
+
+3.4 Processos Genéricos (genericProcess.c)
+Executam loops de trabalho e fazem syscalls de I/O aleatoriamente.
+Podem ser preemptados pelo kernel a qualquer momento.
+
+==============================================================================
+
+4. ESCALONAMENTO ROUND ROBIN
+
+O kernel mantém uma fila FIFO de processos prontos. A cada quantum:
+1. Processo atual é preemptado (SIGSTOP)
+2. Volta para o final da fila
+3. Próximo da fila é selecionado
+4. Processo selecionado executa (SIGCONT)
+
+Quantum = 2 segundos
+
+==============================================================================
+
+5. SYSCALLS DE I/O
+
+Processos podem fazer syscalls de I/O:
+1. Processo envia mensagem pelo pipe
+2. Processo envia sinal SIGUSR2 para kernel
+3. Kernel bloqueia o processo (SIGSTOP)
+4. Simula I/O por 3 segundos
+5. Kernel desbloqueia o processo
+
+Dispositivos: D1 e D2
+Operações: Read (R) e Write (W)
+
+==============================================================================
+
+6. INTERRUPÇÕES
+
+Timer (SIGUSR1):
+- Gerada pelo InterController a cada quantum
+- Força troca de contexto
+
+I/O (SIGUSR2):
+- Gerada quando há syscall pendente
+- Kernel processa requisição e bloqueia processo
+
+==============================================================================
+
+7. COMPILAÇÃO E EXECUÇÃO
+
+Compilar:
+  make
+
+Executar:
+  ./os_simulator
+
+Limpar:
+  make clean
+
+Requer: Linux, macOS ou WSL (Windows)
+
+==============================================================================
+
+8. RESULTADOS
+
+O simulador funciona corretamente:
+- Cria 7 processos Unix reais
+- Escalona os processos A1-A5 usando Round Robin
+- Preeempta processos quando quantum expira
+- Bloqueia/desbloqueia processos em I/O
+- Trata interrupções de timer e I/O
+- Todos os processos terminam corretamente
+
+Tempo médio de execução: 2-3 minutos
+
+==============================================================================
+
+9. CONCLUSÃO
+
+O trabalho implementou com sucesso um simulador de SO preemptivo. Foi possível
+demonstrar os conceitos de escalonamento, preempção, bloqueio, interrupções e
+syscalls usando processos reais do Unix.
+
+O código usa fork() para criar processos, sinais para controlar execução, e
+pipes para comunicação entre processos.
+
+==============================================================================
+
+10. DIFICULDADES
+
+- Sincronização entre processos usando sinais
+- Coordenação das interrupções
+- Garantir que os pipes funcionem corretamente
+- Fazer o Round Robin funcionar direito
+
+==============================================================================
+
+ARQUIVOS DO PROJETO:
+
+emulator.c / emulator.h
+kernel.c / kernel.h
+interruptionController.c / interruptionController.h
+genericProcess.c / genericProcess.h
+Makefile
+
+Total: ~600 linhas de código

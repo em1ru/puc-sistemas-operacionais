@@ -1,13 +1,13 @@
 #ifndef GEN_PROC_H
 #define GEN_PROC_H
 
-#define MAX_ITER 1000
+#include <signal.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
-int IOsyscall(int device, char operation);
-
-void genericProcess(void);
-
-int signalHandler(void);
-
+void genericProcess(int process_id, int pipe_to_kernel, int pipe_from_kernel);
 
 #endif
