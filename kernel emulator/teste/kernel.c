@@ -9,6 +9,7 @@
 
 #define NUM_PROCESSOS 7 // kernel, intercontrol, A1, ..., A5
 #define TRUE 1
+#define FALSE 0
 #define MAX_ITERACOES 20 // número máximo de iterações de cada processo A
 #define TIME_SLICE 2 // tempo do time slice em segundos
 typedef enum {
@@ -258,7 +259,11 @@ int main(void) {
                     int pipe_syscall_fd = pipe_syscall[0];
 
                     // Loop principal do Kernel
-                    while (TRUE) {
+                    int running = TRUE;
+                    while (running) {
+                        FD_ZERO(&read_fds); // Limpa o conjunto de monitoramento
+                        FD_SET(pipe_irq_fd, &read_fds); // Adiciona o pipe de IRQ ao monitoramento
+                        FD_SET(pipe_syscall_fd, &read_fds); // Adiciona o pipe de Syscall ao monitoramento
                         // 1. Espera por uma mensagem (IRQ ou SYSCALL)
                         read(pipe_irq[0], &msg, sizeof(Mensagem));
                         if (msg.type == MSG_IRQ) {
@@ -303,8 +308,9 @@ int main(void) {
                                     fila_bloqueados_d2[j] = fila_bloqueados_d2[j + 1]; // note que o último índice ser -1 ajuda a rearrumar a fila correta
                                 }
                             }
-                        }    
-                        else if (msg.type == MSG_SYSCALL) {
+                        }   
+                        read(pipe_syscall[0], &msg, sizeof(Mensagem));
+                        if (msg.type == MSG_SYSCALL) {
                             if (msg.op == OP_READ) {
                                 if (msg.device == DEV_D1) {
                                     lista_cp[i].d1_count += 1;
@@ -332,8 +338,18 @@ int main(void) {
                         
                             kill(lista_cp[i].pid, SIGSTOP); // para o processo que fez a syscall (redundante se já houver pause() pelo processo Ax)
                            
+                            running = FALSE; // deve haver processo vivo para continuar rodando
+                            for (int i = 1; i < NUM_PROCESSOS; i++) {
+                                if (lista_cp[i].estado != FINISHED) {
+                                    running = TRUE;
+                                    break;
+                                }
+                            }
                         }
                     }
+                    fprintf(stderr, "[KERNEL] Todos os processos finalizaram\n");
+                    fprintf(stderr, "[KERNEL] Encerrando Intercontroller\n");
+                    kill(lista_pids[6], SIGKILL); // mata o intercontroller
                     fprintf(stderr, "[KERNEL] Morri :(\n");
                     exit(2);
                     break;
@@ -438,22 +454,15 @@ int main(void) {
         {
         case 0:
             fprintf(stderr, "[SIMULADOR] Despausando kernel...\n");
+            kill(lista_pids[i], SIGCONT);
             break;
-        
-        // case 1:
-        //     fprintf(stderr, "[SIMULADOR] Despausando A%d...\n", i); // ponta-pé inicial dos Ax com o A1; os demais apenas começarão depois do round-robin liberar
-        //     break;
 
         case 6:
             fprintf(stderr, "[SIMULADOR] Despausando intercontrol...\n");
+            kill(lista_pids[i], SIGCONT);
             break;
-        
-        // default:
-        //     fprintf(stderr, "[KERNEL] Despausando A%d somente mediante escalonador do Kernel\n", i);
-        //     break;
         }
-        // if (i <= 1 || i == 6) kill(lista_pids[i], SIGCONT);
-        sleep(1);
+        // sleep(1);
     }
 
     // Espera pelo término de todos os filhos
