@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
 
 typedef enum {
     READY,
@@ -18,11 +19,14 @@ typedef enum {
 typedef struct {
     pid_t pid;
     int id;
+    int pc;
     ProcessState state;
     int blocked_device;
+    int d1_count;
+    int d2_count;
 } ProcessControlBlock;
 
-void kernelSim(pid_t process_list[], int pipe_in, int pipe_out);
+void kernelSim(pid_t process_list[], int pipe_in, int intercontrol_pipe, int pc_pipes[]);
 void timerInterruptHandler(int sig);
 void ioInterruptHandler(int sig);
 void blockProcess(pid_t pid, int device);
