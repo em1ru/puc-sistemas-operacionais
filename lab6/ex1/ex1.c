@@ -9,7 +9,7 @@
 #define DESCANSO_MAXIMO 1
 #define DISTANCIA_PARA_CORRER 100
 static int classificacao = 1;
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t lock;
 static char * resp[200];
 static int cont = 0;
 
@@ -26,12 +26,10 @@ void *Correr(void *sapo){
         int descanso = rand() % DESCANSO_MAXIMO;
         sleep(descanso);
  }
- pthread_mutex_lock(&lock);
  printf("Sapo %d chegou na posicaoo %d com %d pulos\n", (int) sapo,
  classificacao, pulos);
  cont++;
  classificacao++;
- pthread_mutex_unlock(&lock);
  pthread_exit(NULL);
 } 
 

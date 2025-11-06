@@ -3,468 +3,1026 @@ RELATÓRIO - LAB 06
 Gabriel Valente – 2310488
 Gabriel Emile – 2220498
 
-Exercício 1) Comunicação entre Terminais via FIFO
+Exercício 1) Veja uma das saídas obtidas rodando o programa abaixo:
 
--- ARQUIVOS --
+Corrida iniciada ...
+Sapo 0 pulou
+Sapo 1 pulou
+Sapo 0 pulou
+Sapo 2 pulou
+Sapo 1 pulou
+Sapo 3 pulou
+Sapo 1 chegou na posicaoo 1 com 2 pulos
+Sapo 2 pulou
+Sapo 4 pulou
+Sapo 2 chegou na posicaoo 2 com 2 pulos
+Sapo 0 chegou na posicaoo 1 com 2 pulos
+Sapo 4 pulou
+Sapo 3 pulou
+Sapo 4 chegou na posicaoo 4 com 2 pulos
+Sapo 3 chegou na posicaoo 5 com 2 pulos
 
-leitor.c: Programa que cria uma FIFO e fica em loop lendo mensagens dela, exibindo na tela conforme chegam.
+ Acabou!!
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string.h>
+Note que há uma inconsistência nesse output, pois não é possível que o Sapo 1 e o Sapo 0
+tenham chegado simultaneamente à linha de chegada, além de que nenhum sapo consta na terceira 
+posição do pódio. Isso deflagra uma condição de corrida existente no programa devido ao fato de 
+que a variável classificacao é global, porém não há nenhum mutex definindo uma seção crítica para ela 
+a fim de garantir a inviolabilidade da atomicidade da operação classificacao++. Abaixo, outro exemplo
+de corrida que fracassou nesse mesmo sentido:
 
-#define FIFO "minhaFifo"
+Corrida iniciada ...
+Sapo 0 pulou
+Sapo 1 pulou
+Sapo 0 pulou
+Sapo 1 pulou
+Sapo 2 pulou
+Sapo 1 chegou na posicaoo 1 com 2 pulos
+Sapo 0 chegou na posicaoo 2 com 2 pulos
+Sapo 3 pulou
+Sapo 2 pulou
+Sapo 3 pulou
+Sapo 2 pulou
+Sapo 4 pulou
+Sapo 3 chegou na posicaoo 3 com 2 pulos
+Sapo 4 pulou
+Sapo 2 chegou na posicaoo 3 com 3 pulos
+Sapo 4 pulou
+Sapo 4 chegou na posicaoo 5 com 3 pulos
 
-int main() {
-    int fd;
-    char ch;
-    
-    // cria a FIFO se nao existe
-    if (access(FIFO, F_OK) == -1) {
-        if (mkfifo(FIFO, S_IRUSR | S_IWUSR) == -1) {
-            perror("mkfifo");
-            exit(1);
-        }
-        printf("FIFO criada\n");
-    }
-    
-    printf("Aguardando mensagens...\n");
-    
-    // loop infinito lendo da FIFO
-    while (1) {
-        fd = open(FIFO, O_RDONLY);
-        if (fd == -1) {
-            perror("open");
-            exit(1);
-        }
-        
-        // le caractere por caractere e mostra na tela
-        while (read(fd, &ch, sizeof(ch)) > 0) {
-            putchar(ch);
-        }
-        
-        close(fd);
-    }
-    
-    return 0;
-}
+ Acabou!!
 
-escritor.c: Programa que lê mensagens do teclado (stdin) e as escreve na FIFO para serem lidas pelo processo leitor.
+Dessa vez, conflito na posição 3 e nenhum sapo na posição 4.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string.h>
+Exercício 2) Modificar o programa com mutex para dar fim à condição de corrida é muito simples, 
+basta cercar a operação de incremento da variável classificacao. Abaixo o código final e a linha de comando para compilar:
 
-#define FIFO "minhaFifo"
-
-int main() {
-    int fd;
-    char msg[256];
-    
-    // cria a FIFO se nao existe
-    if (access(FIFO, F_OK) == -1) {
-        if (mkfifo(FIFO, S_IRUSR | S_IWUSR) == -1) {
-            perror("mkfifo");
-            exit(1);
-        }
-    }
-    
-    printf("Digite mensagens (Ctrl+D para sair):\n");
-    
-    // le do teclado e escreve na FIFO
-    while (fgets(msg, sizeof(msg), stdin) != NULL) {
-        fd = open(FIFO, O_WRONLY);
-        if (fd == -1) {
-            perror("open");
-            exit(1);
-        }
-        
-        write(fd, msg, strlen(msg));
-        close(fd);
-    }
-    
-    printf("\nEncerrando...\n");
-    return 0;
-}
-
--- COMPILAÇÃO E EXECUÇÃO --
-
-gcc -o leitor ex1/leitor.c
-gcc -o escritor ex1/escritor.c
-
-Terminal 1:
-./leitor
-
-Terminal 2:
-./escritor
-
--- OUTPUT --
-
-Terminal 1 (leitor):
-FIFO criada
-Aguardando mensagens...
-ola mundo
-teste de fifo
-comunicacao entre processos
-
-Terminal 2 (escritor):
-Digite mensagens (Ctrl+D para sair):
-ola mundo
-teste de fifo
-comunicacao entre processos
-^D
-Encerrando...
-
--- ANÁLISE --
-
-Este exercício demonstra a comunicação entre processos através de FIFO (Named Pipe), que diferentemente de pipes anônimos, possuem um nome no sistema de arquivos e podem conectar processos não relacionados.
-
-1. `mkfifo()`: Cria um arquivo especial do tipo FIFO no sistema de arquivos. A função recebe o nome da FIFO e as permissões (S_IRUSR | S_IWUSR = leitura e escrita para o usuário). Retorna 0 em caso de sucesso, -1 em caso de erro.
-
-2. `access()`: Verifica se a FIFO já existe antes de tentar criá-la. Isso evita erros quando múltiplos processos tentam criar a mesma FIFO.
-
-3. Bloqueio no `open()`: Quando o leitor chama `open(FIFO, O_RDONLY)`, a chamada bloqueia até que algum processo abra a mesma FIFO para escrita. Da mesma forma, o escritor bloqueia em `open(FIFO, O_WRONLY)` até que haja um leitor. Isso garante a sincronização entre os processos.
-
-4. Transferência de Dados: Após ambas as extremidades estarem abertas, o escritor usa `write()` para enviar dados e o leitor usa `read()` para recebê-los. Os dados não são armazenados em disco - o kernel gerencia a transferência internamente.
-
-5. Loop de Leitura: O leitor reabre a FIFO a cada ciclo porque quando o escritor fecha sua ponta (`close(fd)`), o `read()` retorna 0 (EOF), indicando fim de arquivo. Para continuar recebendo mensagens, é necessário reabrir.
-
-Exercício 2) Processos Filhos Escrevendo na Mesma FIFO
-
--- ARQUIVO --
-
-ex2.c: Programa que demonstra múltiplos escritores em uma FIFO. O processo pai cria uma FIFO e dois processos filhos, cada um escrevendo uma mensagem diferente. Após os filhos terminarem, o pai lê todas as mensagens.
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string.h>
-#include <sys/wait.h>
-
-#define FIFO "fifoEx2"
-
-int main() {
-    int fd;
-    pid_t pid1, pid2;
-    char buffer[256];
-    int n;
-    
-    // cria a FIFO
-    if (access(FIFO, F_OK) == -1) {
-        if (mkfifo(FIFO, S_IRUSR | S_IWUSR) == -1) {
-            perror("mkfifo");
-            exit(1);
-        }
-    }
-    
-    // cria primeiro filho
-    pid1 = fork();
-    if (pid1 == 0) {
-        // primeiro filho escreve mensagem
-        sleep(1); // espera um pouco
-        fd = open(FIFO, O_WRONLY);
-        char *msg1 = "Mensagem do filho 1\n";
-        write(fd, msg1, strlen(msg1));
-        close(fd);
-        exit(0);
-    }
-    
-    // cria segundo filho
-    pid2 = fork();
-    if (pid2 == 0) {
-        // segundo filho escreve mensagem
-        sleep(1); // espera um pouco
-        fd = open(FIFO, O_WRONLY);
-        char *msg2 = "Mensagem do filho 2\n";
-        write(fd, msg2, strlen(msg2));
-        close(fd);
-        exit(0);
-    }
-    
-    // pai espera os filhos terminarem
-    waitpid(pid1, NULL, 0);
-    waitpid(pid2, NULL, 0);
-    
-    printf("Filhos terminaram, lendo mensagens da FIFO:\n");
-    
-    // pai abre e le da FIFO
-    fd = open(FIFO, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        exit(1);
-    }
-    
-    // le e imprime tudo
-    while ((n = read(fd, buffer, sizeof(buffer))) > 0) {
-        write(1, buffer, n); // escreve na tela
-    }
-    
-    close(fd);
-    
-    // remove a FIFO
-    unlink(FIFO);
-    
-    return 0;
-}
-
--- COMPILAÇÃO E EXECUÇÃO --
-
-gcc -o ex2 ex2/ex2.c
+-- SHELL --
+gcc -Wall -lpthread -o ex2 ex2.c
 ./ex2
 
+-- ARQUIVO --
+#include <pthread.h>
+#include <stdio.h>
+#include <wait.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+#define NUM_THREADS 5
+#define PULO_MAXIMO 100
+#define DESCANSO_MAXIMO 1
+#define DISTANCIA_PARA_CORRER 100
+static int classificacao = 1;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static char * resp[200];
+static int cont = 0;
+
+
+void *Correr(void *sapo){
+    int pulos = 0;
+    int distanciaJaCorrida = 0;
+
+    while (distanciaJaCorrida <= DISTANCIA_PARA_CORRER) {
+        int pulo = rand() % PULO_MAXIMO;
+        distanciaJaCorrida += pulo;
+        pulos++;
+        printf("Sapo %d pulou\n", (int) sapo);
+        int descanso = rand() % DESCANSO_MAXIMO;
+        sleep(descanso);
+ }
+ pthread_mutex_lock(&lock);
+ printf("Sapo %d chegou na posicaoo %d com %d pulos\n", (int) sapo,
+ classificacao, pulos);
+ cont++;
+ classificacao++;
+ pthread_mutex_unlock(&lock);
+ pthread_exit(NULL);
+} 
+
+int main()
+{
+ classificacao =1;
+ pthread_t threads[NUM_THREADS];
+ int t;
+ printf("Corrida iniciada ... \n");
+ for(t=0;t < NUM_THREADS;t++) pthread_create(&threads[t], NULL, Correr, (void *) t);
+ for(t=0;t < NUM_THREADS; t++) pthread_join(threads[t],NULL);
+ printf("\n Acabou!!\n");
+ pthread_exit(NULL);
+}
+
 -- OUTPUT --
+Corrida iniciada ...
+Sapo 0 pulou
+Sapo 1 pulou
+Sapo 0 pulou
+Sapo 1 pulou
+Sapo 3 pulou
+Sapo 2 pulou
+Sapo 0 chegou na posicaoo 1 com 2 pulos
+Sapo 2 pulou
+Sapo 3 pulou
+Sapo 1 chegou na posicaoo 2 com 2 pulos
+Sapo 4 pulou
+Sapo 2 pulou
+Sapo 4 pulou
+Sapo 3 chegou na posicaoo 3 com 2 pulos
+Sapo 4 pulou
+Sapo 2 chegou na posicaoo 4 com 3 pulos
+Sapo 4 chegou na posicaoo 5 com 3 pulos
 
-Filhos terminaram, lendo mensagens da FIFO:
-Mensagem do filho 1
-Mensagem do filho 2
+ Acabou!!
 
--- ANÁLISE --
+ Exercício 3) O programa foi implementado da seguinte forma:
 
-Este exercício explora o comportamento de FIFOs com múltiplos escritores e demonstra o uso de sincronização através de `waitpid()`.
+ -- SHELL --
+ gcc -Wall -lpthread -o ex3 ex3.c
+ ./ex3
 
-1. Criação dos Filhos: O pai usa `fork()` duas vezes para criar dois processos filhos. Cada filho herda uma cópia do código do pai, mas executa apenas o bloco condicional correspondente (`if (pid == 0)`).
-
-2. `sleep(1)`: Os filhos dormem por 1 segundo para dar tempo do pai criar ambos os processos e preparar-se para a leitura. Sem essa pausa, poderia haver condições de corrida onde os filhos tentam abrir a FIFO antes que o leitor esteja pronto.
-
-3. Múltiplos Escritores: Ambos os filhos abrem a mesma FIFO para escrita. O sistema operacional permite isso e serializa as escritas automaticamente. Se as mensagens forem pequenas (menores que PIPE_BUF, tipicamente 4096 bytes), cada `write()` é atômico.
-
-4. `waitpid()`: O pai chama `waitpid()` para cada filho, bloqueando até que o processo filho especificado termine. Isso garante que todas as mensagens foram escritas na FIFO antes do pai começar a ler. Se o pai lesse antes dos filhos terminarem, poderia perder mensagens.
-
-5. Leitura Única: Após os filhos terminarem e fecharem seus descritores de escrita, o pai abre a FIFO para leitura. Como não há mais escritores, quando o buffer está vazio, `read()` retorna 0, indicando EOF, e o loop termina.
-
-6. `unlink()`: Remove a FIFO do sistema de arquivos após o uso. É uma boa prática de limpeza, embora a FIFO persista até ser explicitamente removida.
-
-Exercício 3) Cliente-Servidor com Comunicação Bidirecional
-
--- ARQUIVOS --
-
-servidor.c: Programa servidor que aguarda mensagens dos clientes através de uma FIFO, converte o texto para MAIÚSCULAS e envia a resposta através de outra FIFO.
-
+ -- ARQUIVO --
+ #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string.h>
-#include <ctype.h>
+#include <unistd.h> // sleep()
 
-#define FIFO_CLIENT_TO_SERVER "fifo_c2s"
-#define FIFO_SERVER_TO_CLIENT "fifo_s2c"
+#define NUM_THREADS             2
+#define INDICE_PRODUTOR         0
+#define INDICE_CONSUMIDOR       1
+#define TAMANHO_FILA            8
+#define MARCA_POSICAO_LIVRE     -1
+#define ERRO                    0
+#define SUCESSO                 1
+#define ERRO_REMOCAO            -1
+#define MAX_ITERACOES           64
+#define DELAY_CONSUMIDOR        2
+#define DELAY_PRODUTOR          1
 
-int main() {
-    int fd_read, fd_write;
-    char buffer[256];
-    int n, i;
-    
-    // cria as FIFOs se nao existem
-    if (access(FIFO_CLIENT_TO_SERVER, F_OK) == -1) {
-        if (mkfifo(FIFO_CLIENT_TO_SERVER, S_IRUSR | S_IWUSR) == -1) {
-            perror("mkfifo cliente->servidor");
-            exit(1);
-        }
+typedef struct {
+    int *p_in;          // referente à posição do próximo a entrar na fila
+    int *p_out;         // referente à posição do próximo a sair da fila 
+    int v[TAMANHO_FILA]; 
+} Fila;
+
+pthread_mutex_t lock;
+pthread_cond_t cond_full;  // Buffer está cheio?
+pthread_cond_t cond_empty; // Buffer está vazio?
+Fila *fila;
+
+Fila* init_fila(void) {
+    Fila *f = (Fila*)malloc(sizeof(Fila));    
+    // Fazemos os ponteiros p_in e p_out apontarem para o início do vetor v.
+    f->p_in = f->v;
+    f->p_out = f->v;
+
+    // Marcando posições livres (lembrete: fila circular)
+    for (int i = 0; i < TAMANHO_FILA; i++) {
+        f->v[i] = MARCA_POSICAO_LIVRE;
     }
-    
-    if (access(FIFO_SERVER_TO_CLIENT, F_OK) == -1) {
-        if (mkfifo(FIFO_SERVER_TO_CLIENT, S_IRUSR | S_IWUSR) == -1) {
-            perror("mkfifo servidor->cliente");
-            exit(1);
-        }
+
+    // Retorna fila criada
+    return f; 
+}
+
+int is_fila_cheia(Fila* f) {
+    return *(f->p_in) != MARCA_POSICAO_LIVRE;
+}
+
+int is_fila_vazia(Fila* f) {
+    return *(f->p_out) == MARCA_POSICAO_LIVRE;
+}
+
+int add_fila(Fila *f, int val) {
+    // verifica se próxima posição está livre 
+    if (!is_fila_cheia(f)) {
+        *(f->p_in) = val;
+        f->p_in = f->v + ((int)(f->p_in - f->v) + 1) % TAMANHO_FILA; // fila circular
+        return SUCESSO;
     }
-    
-    printf("Servidor rodando...\n");
-    
-    // loop infinito esperando mensagens
-    while (1) {
-        // abre FIFO para ler do cliente
-        fd_read = open(FIFO_CLIENT_TO_SERVER, O_RDONLY);
-        if (fd_read == -1) {
-            perror("open read");
-            exit(1);
+
+    return ERRO;
+}
+
+int remove_fila(Fila *f) {
+    // verifica se fila não é vazia
+    int ret = ERRO_REMOCAO;
+
+    if (!is_fila_vazia(f)) {
+        ret = *(f->p_out);
+        *(f->p_out) = -1; // posição livre
+        f->p_out = f->v + ((int)(f->p_out - f->v) + 1) % TAMANHO_FILA; // fila circular
+    }
+
+    return ret;
+}
+
+void *produzir(void* fila) {
+    Fila* f = (Fila*) fila;
+    for (int i = 0; i < MAX_ITERACOES; i++) {
+        sleep(DELAY_PRODUTOR);
+        int random = 1 + rand() % 64; // gerando números de 1 a 64
+
+        // manipulação da fila deve ser travada pelo mutex para evitar condição de corrida
+        pthread_mutex_lock(&lock);
+        
+        // Espera (liberando o mutex) se o buffer estiver cheio
+        while (is_fila_cheia(f)) {
+            fprintf(stderr, "[PRODUTOR] Buffer cheio. Esperando...\n");
+            pthread_cond_wait(&cond_full, &lock);
         }
         
-        // le mensagem do cliente
-        n = read(fd_read, buffer, sizeof(buffer) - 1);
-        if (n > 0) {
-            buffer[n] = '\0';
-            printf("Recebido: %s", buffer);
-            
-            // converte para maiusculas
-            for (i = 0; i < n; i++) {
-                buffer[i] = toupper(buffer[i]);
-            }
-            
-            printf("Enviando: %s", buffer);
-            
-            // abre FIFO para escrever resposta
-            fd_write = open(FIFO_SERVER_TO_CLIENT, O_WRONLY);
-            if (fd_write == -1) {
-                perror("open write");
-                close(fd_read);
-                continue;
-            }
-            
-            // envia resposta
-            write(fd_write, buffer, n);
-            close(fd_write);
+        // Seção crítica adicionando elemento
+        if (add_fila(f, random) != SUCESSO) {
+            fprintf(stderr, "[PRODUTOR] Erro catastrófico, abortar!!\n");
+            exit(1);
+        }
+        else {
+            fprintf(stderr, "[PRODUTOR] Adicionei %d em fila->v[%d]\n", random, (TAMANHO_FILA + (int)(f->p_in - f->v) - 1) % TAMANHO_FILA);
+        }
+
+        // Sinaliza ao consumidor que o buffer não está mais vazio, depois libera o mutex
+        pthread_cond_signal(&cond_empty);
+        pthread_mutex_unlock(&lock);
+    }
+}
+
+void *consumir(void* fila) {
+    Fila* f = (Fila*) fila;
+    int val_lido;
+    for (int i = 0; i < MAX_ITERACOES; i++) {
+        sleep(DELAY_CONSUMIDOR);
+
+        // manipulação da fila deve ser travada pelo mutex para evitar condição de corrida
+        pthread_mutex_lock(&lock);
+
+        // Espera (liberando o mutex) se o buffer estiver vazio
+        while (is_fila_vazia(f)) {
+            fprintf(stderr, "[CONSUMIDOR] Buffer vazio. Esperando...\n");
+            pthread_cond_wait(&cond_empty, &lock);
         }
         
-        close(fd_read);
+        val_lido = remove_fila(f);
+        // Seção crítica consumindo elemento
+        if (val_lido == ERRO_REMOCAO) {
+            fprintf(stderr, "[CONSUMIDOR] Erro catastrófico, abortar!!\n");
+            exit(1);
+        }
+        else {
+            fprintf(stderr, "[CONSUMIDOR] Li %d em fila->v[%d]\n", val_lido, (TAMANHO_FILA + (int)(f->p_out - f->v) - 1) % TAMANHO_FILA);
+        }
+
+        // Sinaliza ao consumidor que o buffer não está mais vazio, depois libera o mutex
+        pthread_cond_signal(&cond_full);
+        pthread_mutex_unlock(&lock);
     }
+}
+
+
+int main(void) {
+    fila = init_fila();
+    pthread_t threads[NUM_THREADS];
+
+    // Inicializa mutex e variáveis de condição
+    pthread_mutex_init(&lock, NULL); 
+    pthread_cond_init(&cond_full, NULL); 
+    pthread_cond_init(&cond_empty, NULL); 
+
+    fprintf(stderr, "Criando produtor e consumidor...\n");
+
+    // Criando produtor em zero e consumidor em 1
+    pthread_create(&threads[INDICE_PRODUTOR], NULL, produzir, (void*) fila);
+    pthread_create(&threads[INDICE_CONSUMIDOR], NULL, consumir, (void*) fila);
+
+    // Esperando threads terminarem
+    for(int i=0; i < NUM_THREADS; i++) pthread_join(threads[i],NULL);
+
+    // Destrói
+    pthread_mutex_destroy(&lock);
+    pthread_cond_destroy(&cond_full);
+    pthread_cond_destroy(&cond_empty);
     
+    fprintf(stderr, "Trabalho concluído!!\n");
+
     return 0;
 }
 
-cliente.c: Programa cliente que envia mensagens para o servidor através de uma FIFO e recebe as respostas processadas através de outra FIFO.
+-- OUTPUT --
+Criando produtor e consumidor...
+[PRODUTOR] Adicionei 40 em fila->v[0]
+[CONSUMIDOR] Li 40 em fila->v[0]
+[PRODUTOR] Adicionei 7 em fila->v[1]
+[PRODUTOR] Adicionei 42 em fila->v[2]
+[CONSUMIDOR] Li 7 em fila->v[1]
+[PRODUTOR] Adicionei 52 em fila->v[3]
+[PRODUTOR] Adicionei 18 em fila->v[4]
+[CONSUMIDOR] Li 42 em fila->v[2]
+[PRODUTOR] Adicionei 64 em fila->v[5]
+[PRODUTOR] Adicionei 11 em fila->v[6]
+[CONSUMIDOR] Li 52 em fila->v[3]
+[PRODUTOR] Adicionei 45 em fila->v[7]
+[PRODUTOR] Adicionei 42 em fila->v[0]
+[CONSUMIDOR] Li 18 em fila->v[4]
+[PRODUTOR] Adicionei 14 em fila->v[1]
+[PRODUTOR] Adicionei 59 em fila->v[2]
+[CONSUMIDOR] Li 64 em fila->v[5]
+[PRODUTOR] Adicionei 44 em fila->v[3]
+[PRODUTOR] Adicionei 51 em fila->v[4]
+[CONSUMIDOR] Li 11 em fila->v[6]
+[PRODUTOR] Adicionei 60 em fila->v[5]
+[PRODUTOR] Adicionei 36 em fila->v[6]
+[CONSUMIDOR] Li 45 em fila->v[7]
+[PRODUTOR] Adicionei 7 em fila->v[7]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 42 em fila->v[0]
+[PRODUTOR] Adicionei 61 em fila->v[0]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 14 em fila->v[1]
+[PRODUTOR] Adicionei 3 em fila->v[1]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 59 em fila->v[2]
+[PRODUTOR] Adicionei 21 em fila->v[2]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 44 em fila->v[3]
+[PRODUTOR] Adicionei 57 em fila->v[3]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 51 em fila->v[4]
+[PRODUTOR] Adicionei 28 em fila->v[4]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 60 em fila->v[5]
+[PRODUTOR] Adicionei 41 em fila->v[5]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 36 em fila->v[6]
+[PRODUTOR] Adicionei 40 em fila->v[6]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 7 em fila->v[7]
+[PRODUTOR] Adicionei 14 em fila->v[7]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 61 em fila->v[0]
+[PRODUTOR] Adicionei 55 em fila->v[0]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 3 em fila->v[1]
+[PRODUTOR] Adicionei 27 em fila->v[1]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 21 em fila->v[2]
+[PRODUTOR] Adicionei 47 em fila->v[2]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 57 em fila->v[3]
+[PRODUTOR] Adicionei 36 em fila->v[3]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 28 em fila->v[4]
+[PRODUTOR] Adicionei 52 em fila->v[4]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 41 em fila->v[5]
+[PRODUTOR] Adicionei 32 em fila->v[5]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 40 em fila->v[6]
+[PRODUTOR] Adicionei 10 em fila->v[6]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 14 em fila->v[7]
+[PRODUTOR] Adicionei 27 em fila->v[7]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 55 em fila->v[0]
+[PRODUTOR] Adicionei 39 em fila->v[0]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 27 em fila->v[1]
+[PRODUTOR] Adicionei 51 em fila->v[1]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 47 em fila->v[2]
+[PRODUTOR] Adicionei 14 em fila->v[2]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 36 em fila->v[3]
+[PRODUTOR] Adicionei 56 em fila->v[3]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 52 em fila->v[4]
+[PRODUTOR] Adicionei 50 em fila->v[4]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 32 em fila->v[5]
+[PRODUTOR] Adicionei 25 em fila->v[5]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 10 em fila->v[6]
+[PRODUTOR] Adicionei 36 em fila->v[6]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 27 em fila->v[7]
+[PRODUTOR] Adicionei 27 em fila->v[7]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 39 em fila->v[0]
+[PRODUTOR] Adicionei 38 em fila->v[0]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 51 em fila->v[1]
+[PRODUTOR] Adicionei 30 em fila->v[1]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 14 em fila->v[2]
+[PRODUTOR] Adicionei 6 em fila->v[2]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 56 em fila->v[3]
+[PRODUTOR] Adicionei 24 em fila->v[3]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 50 em fila->v[4]
+[PRODUTOR] Adicionei 25 em fila->v[4]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 25 em fila->v[5]
+[PRODUTOR] Adicionei 42 em fila->v[5]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 36 em fila->v[6]
+[PRODUTOR] Adicionei 31 em fila->v[6]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 27 em fila->v[7]
+[PRODUTOR] Adicionei 21 em fila->v[7]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 38 em fila->v[0]
+[PRODUTOR] Adicionei 44 em fila->v[0]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 30 em fila->v[1]
+[PRODUTOR] Adicionei 51 em fila->v[1]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 6 em fila->v[2]
+[PRODUTOR] Adicionei 14 em fila->v[2]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 24 em fila->v[3]
+[PRODUTOR] Adicionei 7 em fila->v[3]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 25 em fila->v[4]
+[PRODUTOR] Adicionei 28 em fila->v[4]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 42 em fila->v[5]
+[PRODUTOR] Adicionei 53 em fila->v[5]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 31 em fila->v[6]
+[PRODUTOR] Adicionei 21 em fila->v[6]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 21 em fila->v[7]
+[PRODUTOR] Adicionei 18 em fila->v[7]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 44 em fila->v[0]
+[PRODUTOR] Adicionei 15 em fila->v[0]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 51 em fila->v[1]
+[PRODUTOR] Adicionei 3 em fila->v[1]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 14 em fila->v[2]
+[PRODUTOR] Adicionei 53 em fila->v[2]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 7 em fila->v[3]
+[PRODUTOR] Adicionei 2 em fila->v[3]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 28 em fila->v[4]
+[PRODUTOR] Adicionei 34 em fila->v[4]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 53 em fila->v[5]
+[PRODUTOR] Adicionei 62 em fila->v[5]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 21 em fila->v[6]
+[PRODUTOR] Adicionei 29 em fila->v[6]
+[PRODUTOR] Buffer cheio. Esperando...
+[CONSUMIDOR] Li 18 em fila->v[7]
+[PRODUTOR] Adicionei 8 em fila->v[7]
+[CONSUMIDOR] Li 15 em fila->v[0]
+[CONSUMIDOR] Li 3 em fila->v[1]
+[CONSUMIDOR] Li 53 em fila->v[2]
+[CONSUMIDOR] Li 2 em fila->v[3]
+[CONSUMIDOR] Li 34 em fila->v[4]
+[CONSUMIDOR] Li 62 em fila->v[5]
+[CONSUMIDOR] Li 29 em fila->v[6]
+[CONSUMIDOR] Li 8 em fila->v[7]
+Trabalho concluído!!
 
+-- COMENTÁRIOS --
+O programa implementa a solução para o problema clássico do Produtor/Consumidor, conforme proposto no Exercício 3. 
+O objetivo é coordenar duas threads - um produtor e um consumidor - que compartilham um recurso de dados finito, 
+no caso, uma fila circular de 8 posições. O funcionamento é o seguinte: a thread produtora gera um número
+inteiro aleatório a cada 1 segundo e o insere na fila; a thread consumidora retira um item da fila a cada 2 segundos. 
+Ambas as threads executam 64 iterações. A principal estratégia de solução adotada foi a implementação de uma fila
+circular (typedef Fila) gerenciada não por contadores de início e fim, mas por ponteiros (p_in, p_out) que apontam
+diretamente para as posições do vetor. O estado da fila (cheia ou vazia) é determinado pela verificação do conteúdo 
+da posição-alvo, usando a constante MARCA_POSICAO_LIVRE (-1) para indicar um slot vazio. As funções is_fila_cheia 
+e is_fila_vazia implementam essa lógica. Para a sincronização e para evitar condições de corrida, foi utilizado
+um único pthread_mutex_t (lock), que protege todas as operações críticas de acesso à fila (adição e remoção). O 
+maior desafio foi gerenciar os estados de "buffer cheio" e "buffer vazio" sem o uso de busy-waiting. Este desafio 
+foi superado com o uso de duas variáveis de condição: cond_full e cond_empty. Quando o produtor encontra a fila cheia, 
+ele chama pthread_cond_wait(&cond_full, &lock), o que atomicamente libera o mutex e suspende a thread. De forma 
+similar, o consumidor espera em cond_empty se a fila estiver vazia. Uma garantia de robustez foi implementar essa
+espera dentro de um loop while, protegendo contra spurious wakeups. A notificação é feita com pthread_cond_signal: 
+o produtor sinaliza cond_empty após inserir um item, e o consumidor sinaliza cond_full após remover um. 
+Os logs do programa confirmam o funcionamento esperado: o buffer rapidamente enche (pois o produtor é mais rápido), 
+a thread produtora é bloqueada e, a partir daí, o sistema opera em sincronia, com o consumidor "acordando" o 
+produtor a cada item consumido, até que as 64 iterações sejam concluídas. O programa finaliza corretamente após 
+o main esperar ambas as threads com pthread_join.
+
+Exercício 4) Expandimos o problema clássico do Produtor/Consumidor para um cenário com múltiplos produtores e múltiplos consumidores (M:N). O mutex pode se manter o mesmo, 
+sua função prevalece inalterada. A decisão de design mais crítica do Exercício 4 foi a escolha entre pthread_cond_signal e pthread_cond_broadcast. Enquanto signal (que acorda uma thread) é eficiente no caso 1:1, 
+ele se mostra problemático no cenário M:N. O uso de signal pode levar a um problema de "Sinal Perdido" (Lost Wakeup): se múltiplos produtores estão dormindo e um consumidor sinaliza uma vaga, apenas um 
+produtor acorda. Os outros permanecem adormecidos e podem nunca ser acordados se os sinais forem "consumidos" rapidamente, levando a um estado de Inanição (Starvation) e subutilização dos recursos. Para garantir 
+a correção e a justiça, optamos por usar pthread_cond_broadcast. Esta função acorda todas as threads que esperam naquela condição. Embora isso introduza um fenômeno conhecido como "Thundering Herd" 
+(Manada Estrondosa)—onde muitas threads acordam e competem pelo mutex, embora a maioria volte a dormir—, este é um comportamento esperado e gerenciável. A chave que
+torna o broadcast seguro e robusto é a implementação da espera dentro de um loop while. Este while é a nossa principal defesa: ele não só resolve o "Thundering Herd" 
+(fazendo as threads re-testarem a condição e voltarem a dormir), mas também nos protege contra "Despertares Espúrios" (Spurious Wakeups), que são raras ativações não 
+solicitadas pelo sistema operacional. Em conclusão, a solução implementada é robusta por usar um mutex para segurança e broadcast com while para garantir a vivacidade 
+(liveness) e correção, assegurando que nenhuma thread seja "esquecida" e que o sistema se auto-regule eficientemente. A seguir, o código com as devidas adaptações (que foram poucas,
+haja vista que a estrutura principal foi estrategicamente planejada para ser reutilizável do item anterior):
+
+-- SHELL --
+gcc -Wall -lpthread -o ex4 ex4.c
+./ex4
+
+-- ARQUIVO --
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <string.h>
+#include <unistd.h> // sleep()
 
-#define FIFO_CLIENT_TO_SERVER "fifo_c2s"
-#define FIFO_SERVER_TO_CLIENT "fifo_s2c"
+#define INDICE_PRODUTOR         0
+#define INDICE_CONSUMIDOR       1
+#define TAMANHO_FILA            8
+#define MARCA_POSICAO_LIVRE     -1
+#define ERRO                    0
+#define SUCESSO                 1
+#define ERRO_REMOCAO            -1
+#define MAX_ITERACOES           64
+#define DELAY_CONSUMIDOR        2
+#define DELAY_PRODUTOR          1
 
-int main() {
-    int fd_write, fd_read;
-    char msg[256];
-    char resposta[256];
-    int n;
-    
-    // verifica se as FIFOs existem
-    if (access(FIFO_CLIENT_TO_SERVER, F_OK) == -1) {
-        printf("Erro: servidor nao esta rodando\n");
-        exit(1);
+#define NUM_PRODUTORES          2  
+#define NUM_CONSUMIDORES        3
+
+typedef struct {
+    int *p_in;          // referente à posição do próximo a entrar na fila
+    int *p_out;         // referente à posição do próximo a sair da fila 
+    int v[TAMANHO_FILA]; 
+} Fila;
+
+typedef struct {
+    int id;       // ID da thread (0, 1, 2...)
+    Fila *fila;   // Ponteiro para a fila compartilhada
+} ThreadArgs;
+
+pthread_mutex_t lock;
+pthread_cond_t cond_full;  // Buffer está cheio?
+pthread_cond_t cond_empty; // Buffer está vazio?
+Fila *fila;
+
+Fila* init_fila(void) {
+    Fila *f = (Fila*)malloc(sizeof(Fila));    
+    // Fazemos os ponteiros p_in e p_out apontarem para o início do vetor v.
+    f->p_in = f->v;
+    f->p_out = f->v;
+
+    // Marcando posições livres (lembrete: fila circular)
+    for (int i = 0; i < TAMANHO_FILA; i++) {
+        f->v[i] = MARCA_POSICAO_LIVRE;
     }
-    
-    printf("Cliente conectado. Digite mensagens:\n");
-    
-    // le mensagens do teclado
-    while (fgets(msg, sizeof(msg), stdin) != NULL) {
-        // abre FIFO para escrever pro servidor
-        fd_write = open(FIFO_CLIENT_TO_SERVER, O_WRONLY);
-        if (fd_write == -1) {
-            perror("open write");
+
+    // Retorna fila criada
+    return f; 
+}
+
+int is_fila_cheia(Fila* f) {
+    return *(f->p_in) != MARCA_POSICAO_LIVRE;
+}
+
+int is_fila_vazia(Fila* f) {
+    return *(f->p_out) == MARCA_POSICAO_LIVRE;
+}
+
+int add_fila(Fila *f, int val) {
+    // verifica se próxima posição está livre 
+    if (!is_fila_cheia(f)) {
+        *(f->p_in) = val;
+        f->p_in = f->v + ((int)(f->p_in - f->v) + 1) % TAMANHO_FILA; // fila circular
+        return SUCESSO;
+    }
+
+    return ERRO;
+}
+
+int remove_fila(Fila *f) {
+    // verifica se fila não é vazia
+    int ret = ERRO_REMOCAO;
+
+    if (!is_fila_vazia(f)) {
+        ret = *(f->p_out);
+        *(f->p_out) = -1; // posição livre
+        f->p_out = f->v + ((int)(f->p_out - f->v) + 1) % TAMANHO_FILA; // fila circular
+    }
+
+    return ret;
+}
+
+void *produzir(void* arg) {
+    // desempacotar argumentos
+    ThreadArgs *args = (ThreadArgs*) arg;
+    Fila* f = args->fila;
+    int id = args->id;
+
+    for (int i = 0; i < MAX_ITERACOES; i++) {
+        sleep(DELAY_PRODUTOR);
+        int random = 1 + rand() % 64; // gerando números de 1 a 64
+
+        // manipulação da fila deve ser travada pelo mutex para evitar condição de corrida
+        pthread_mutex_lock(&lock);
+        
+        // Espera (liberando o mutex) se o buffer estiver cheio
+        while (is_fila_cheia(f)) {
+            fprintf(stderr, "[PRODUTOR %d] \t Buffer cheio. Esperando...\n", id);
+            pthread_cond_wait(&cond_full, &lock);
+        }
+        
+        // Seção crítica adicionando elemento
+        if (add_fila(f, random) != SUCESSO) {
+            fprintf(stderr, "[PRODUTOR %d] \t Erro catastrófico, abortar!!\n", id);
             exit(1);
         }
+        else {
+            int indice_escrito = ((int)(f->p_in - f->v) - 1 + TAMANHO_FILA) % TAMANHO_FILA;
+            fprintf(stderr, "[PRODUTOR %d] \t Adicionei %d em fila->v[%d]\n", id, random, indice_escrito);
+        }
+
+        // Sinaliza ao consumidor que o buffer não está mais vazio, depois libera o mutex
+        pthread_cond_broadcast(&cond_empty);
+        pthread_mutex_unlock(&lock);
+    }
+}
+
+void *consumir(void* arg) {
+    // desempacotar os argumentos
+    ThreadArgs *args = (ThreadArgs*) arg;
+    Fila* f = args->fila;
+    int id = args->id;
+    
+    int val_lido;
+    for (int i = 0; i < MAX_ITERACOES; i++) {
+        sleep(DELAY_CONSUMIDOR);
+
+        // manipulação da fila deve ser travada pelo mutex para evitar condição de corrida
+        pthread_mutex_lock(&lock);
+
+        // Espera (liberando o mutex) se o buffer estiver vazio
+        while (is_fila_vazia(f)) {
+            fprintf(stderr, "[CONSUMIDOR %d] \t Buffer vazio. Esperando...\n", id);
+            pthread_cond_wait(&cond_empty, &lock);
+        }
         
-        // envia mensagem
-        write(fd_write, msg, strlen(msg));
-        close(fd_write);
-        
-        // abre FIFO para ler resposta do servidor
-        fd_read = open(FIFO_SERVER_TO_CLIENT, O_RDONLY);
-        if (fd_read == -1) {
-            perror("open read");
+        val_lido = remove_fila(f);
+        // Seção crítica consumindo elemento
+        if (val_lido == ERRO_REMOCAO) {
+            fprintf(stderr, "[CONSUMIDOR %d] \t Erro catastrófico, abortar!!\n", id);
             exit(1);
         }
-        
-        // le resposta
-        n = read(fd_read, resposta, sizeof(resposta) - 1);
-        if (n > 0) {
-            resposta[n] = '\0';
-            printf("Resposta: %s", resposta);
+        else {
+            int indice_lido = ((int)(f->p_out - f->v) - 1 + TAMANHO_FILA) % TAMANHO_FILA;
+            fprintf(stderr, "[CONSUMIDOR %d] \t Li %d em fila->v[%d]\n", id, val_lido, indice_lido);
         }
-        
-        close(fd_read);
+
+        // Sinaliza ao consumidor que o buffer não está mais vazio, depois libera o mutex
+        pthread_cond_broadcast(&cond_full);
+        pthread_mutex_unlock(&lock);
+    }
+}
+
+
+int main(void) {
+    fila = init_fila();
+    int total_threads = NUM_PRODUTORES + NUM_CONSUMIDORES;
+    pthread_t threads[total_threads];
+
+    // array de structs de argumentos, um para cada thread, para que cada um tenha seu ID.
+    ThreadArgs args[total_threads];
+
+    // Inicializa mutex e variáveis de condição
+    pthread_mutex_init(&lock, NULL); 
+    pthread_cond_init(&cond_full, NULL); 
+    pthread_cond_init(&cond_empty, NULL); 
+
+    fprintf(stderr, "Criando %d produtores e %d consumidores...\n", NUM_PRODUTORES, NUM_CONSUMIDORES);
+
+    int i;
+    // Criando Produtores 
+    for(i = 0; i < NUM_PRODUTORES; i++) {
+        args[i].id = i;
+        args[i].fila = fila;
+        pthread_create(&threads[i], NULL, produzir, (void*) &args[i]); // Passa o endereço do arg
+    }
+
+    // Criando Consumidores 
+    // (Note que 'i' continua de onde parou)
+    for(; i < total_threads; i++) {
+        args[i].id = i - NUM_PRODUTORES; // IDs dos consumidores recomeçam de 0
+        args[i].fila = fila;
+        pthread_create(&threads[i], NULL, consumir, (void*) &args[i]); // Passa o endereço do arg
     }
     
-    printf("\nEncerrando cliente...\n");
+    // Esperando todas as threads
+    for(i = 0; i < total_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    // Destrói
+    pthread_mutex_destroy(&lock);
+    pthread_cond_destroy(&cond_full);
+    pthread_cond_destroy(&cond_empty);
+    
+    fprintf(stderr, "Trabalho concluído!!\n");
+
     return 0;
 }
 
--- COMPILAÇÃO E EXECUÇÃO --
-
-gcc -o servidor ex3/servidor.c
-gcc -o cliente ex3/cliente.c
-
-Terminal 1 (servidor):
-./servidor
-
-Terminal 2 (cliente 1):
-./cliente
-
-Terminal 3 (cliente 2 - opcional):
-./cliente
-
 -- OUTPUT --
+Criando 2 produtores e 3 consumidores...
+[PRODUTOR 1]     Adicionei 40 em fila->v[0]
+[PRODUTOR 0]     Adicionei 7 em fila->v[1]
+[CONSUMIDOR 0]   Li 40 em fila->v[0]
+[PRODUTOR 1]     Adicionei 42 em fila->v[2]
+[PRODUTOR 0]     Adicionei 52 em fila->v[3]
+[CONSUMIDOR 1]   Li 7 em fila->v[1]
+[CONSUMIDOR 2]   Li 42 em fila->v[2]
+[PRODUTOR 0]     Adicionei 18 em fila->v[4]
+[PRODUTOR 1]     Adicionei 64 em fila->v[5]
+[CONSUMIDOR 0]   Li 52 em fila->v[3]
+[CONSUMIDOR 1]   Li 18 em fila->v[4]
+[CONSUMIDOR 2]   Li 64 em fila->v[5]
+[PRODUTOR 1]     Adicionei 45 em fila->v[6]
+[PRODUTOR 0]     Adicionei 11 em fila->v[7]
+[PRODUTOR 1]     Adicionei 42 em fila->v[0]
+[PRODUTOR 0]     Adicionei 14 em fila->v[1]
+[CONSUMIDOR 1]   Li 45 em fila->v[6]
+[CONSUMIDOR 0]   Li 11 em fila->v[7]
+[PRODUTOR 1]     Adicionei 59 em fila->v[2]
+[PRODUTOR 0]     Adicionei 44 em fila->v[3]
+[CONSUMIDOR 2]   Li 42 em fila->v[0]
+[PRODUTOR 0]     Adicionei 51 em fila->v[4]
+[PRODUTOR 1]     Adicionei 60 em fila->v[5]
+[CONSUMIDOR 1]   Li 14 em fila->v[1]
+[CONSUMIDOR 0]   Li 59 em fila->v[2]
+[CONSUMIDOR 2]   Li 44 em fila->v[3]
+[PRODUTOR 0]     Adicionei 36 em fila->v[6]
+[PRODUTOR 1]     Adicionei 7 em fila->v[7]
+[PRODUTOR 0]     Adicionei 61 em fila->v[0]
+[PRODUTOR 1]     Adicionei 3 em fila->v[1]
+[CONSUMIDOR 1]   Li 51 em fila->v[4]
+[CONSUMIDOR 0]   Li 60 em fila->v[5]
+[CONSUMIDOR 2]   Li 36 em fila->v[6]
+[PRODUTOR 1]     Adicionei 21 em fila->v[2]
+[PRODUTOR 0]     Adicionei 57 em fila->v[3]
+[PRODUTOR 1]     Adicionei 28 em fila->v[4]
+[PRODUTOR 0]     Adicionei 41 em fila->v[5]
+[CONSUMIDOR 1]   Li 7 em fila->v[7]
+[CONSUMIDOR 0]   Li 61 em fila->v[0]
+[CONSUMIDOR 2]   Li 3 em fila->v[1]
+[PRODUTOR 1]     Adicionei 40 em fila->v[6]
+[PRODUTOR 0]     Adicionei 14 em fila->v[7]
+[PRODUTOR 1]     Adicionei 55 em fila->v[0]
+[PRODUTOR 0]     Adicionei 27 em fila->v[1]
+[CONSUMIDOR 1]   Li 21 em fila->v[2]
+[CONSUMIDOR 0]   Li 57 em fila->v[3]
+[CONSUMIDOR 2]   Li 28 em fila->v[4]
+[PRODUTOR 1]     Adicionei 47 em fila->v[2]
+[PRODUTOR 0]     Adicionei 36 em fila->v[3]
+[PRODUTOR 1]     Adicionei 52 em fila->v[4]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 41 em fila->v[5]
+[CONSUMIDOR 0]   Li 40 em fila->v[6]
+[PRODUTOR 0]     Adicionei 32 em fila->v[5]
+[CONSUMIDOR 2]   Li 14 em fila->v[7]
+[PRODUTOR 1]     Adicionei 10 em fila->v[6]
+[PRODUTOR 0]     Adicionei 27 em fila->v[7]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 55 em fila->v[0]
+[PRODUTOR 1]     Adicionei 39 em fila->v[0]
+[CONSUMIDOR 0]   Li 27 em fila->v[1]
+[CONSUMIDOR 2]   Li 47 em fila->v[2]
+[PRODUTOR 0]     Adicionei 51 em fila->v[1]
+[PRODUTOR 1]     Adicionei 14 em fila->v[2]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 36 em fila->v[3]
+[CONSUMIDOR 0]   Li 52 em fila->v[4]
+[CONSUMIDOR 2]   Li 32 em fila->v[5]
+[PRODUTOR 1]     Adicionei 50 em fila->v[3]
+[PRODUTOR 0]     Adicionei 56 em fila->v[4]
+[PRODUTOR 1]     Adicionei 25 em fila->v[5]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 10 em fila->v[6]
+[CONSUMIDOR 2]   Li 27 em fila->v[7]
+[CONSUMIDOR 1]   Li 39 em fila->v[0]
+[PRODUTOR 0]     Adicionei 36 em fila->v[6]
+[PRODUTOR 1]     Adicionei 27 em fila->v[7]
+[PRODUTOR 0]     Adicionei 38 em fila->v[0]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 51 em fila->v[1]
+[PRODUTOR 1]     Adicionei 30 em fila->v[1]
+[CONSUMIDOR 2]   Li 14 em fila->v[2]
+[CONSUMIDOR 0]   Li 50 em fila->v[3]
+[PRODUTOR 0]     Adicionei 6 em fila->v[2]
+[PRODUTOR 1]     Adicionei 24 em fila->v[3]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 56 em fila->v[4]
+[CONSUMIDOR 0]   Li 25 em fila->v[5]
+[PRODUTOR 0]     Adicionei 25 em fila->v[4]
+[CONSUMIDOR 2]   Li 36 em fila->v[6]
+[PRODUTOR 1]     Adicionei 42 em fila->v[5]
+[PRODUTOR 0]     Adicionei 31 em fila->v[6]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 27 em fila->v[7]
+[PRODUTOR 1]     Adicionei 21 em fila->v[7]
+[CONSUMIDOR 0]   Li 38 em fila->v[0]
+[CONSUMIDOR 2]   Li 30 em fila->v[1]
+[PRODUTOR 0]     Adicionei 44 em fila->v[0]
+[PRODUTOR 1]     Adicionei 51 em fila->v[1]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 6 em fila->v[2]
+[PRODUTOR 0]     Adicionei 14 em fila->v[2]
+[CONSUMIDOR 0]   Li 24 em fila->v[3]
+[PRODUTOR 1]     Adicionei 7 em fila->v[3]
+[CONSUMIDOR 2]   Li 25 em fila->v[4]
+[PRODUTOR 0]     Adicionei 28 em fila->v[4]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 42 em fila->v[5]
+[CONSUMIDOR 0]   Li 31 em fila->v[6]
+[PRODUTOR 1]     Adicionei 53 em fila->v[5]
+[CONSUMIDOR 2]   Li 21 em fila->v[7]
+[PRODUTOR 0]     Adicionei 21 em fila->v[6]
+[PRODUTOR 1]     Adicionei 18 em fila->v[7]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 44 em fila->v[0]
+[CONSUMIDOR 0]   Li 51 em fila->v[1]
+[PRODUTOR 0]     Adicionei 15 em fila->v[0]
+[CONSUMIDOR 2]   Li 14 em fila->v[2]
+[PRODUTOR 1]     Adicionei 3 em fila->v[1]
+[PRODUTOR 0]     Adicionei 53 em fila->v[2]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 7 em fila->v[3]
+[PRODUTOR 1]     Adicionei 2 em fila->v[3]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 28 em fila->v[4]
+[PRODUTOR 0]     Adicionei 34 em fila->v[4]
+[CONSUMIDOR 2]   Li 53 em fila->v[5]
+[PRODUTOR 1]     Adicionei 62 em fila->v[5]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 21 em fila->v[6]
+[CONSUMIDOR 0]   Li 18 em fila->v[7]
+[PRODUTOR 0]     Adicionei 29 em fila->v[6]
+[CONSUMIDOR 2]   Li 15 em fila->v[0]
+[PRODUTOR 1]     Adicionei 8 em fila->v[7]
+[PRODUTOR 0]     Adicionei 49 em fila->v[0]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 3 em fila->v[1]
+[CONSUMIDOR 2]   Li 53 em fila->v[2]
+[PRODUTOR 0]     Adicionei 63 em fila->v[1]
+[CONSUMIDOR 0]   Li 2 em fila->v[3]
+[PRODUTOR 1]     Adicionei 42 em fila->v[2]
+[PRODUTOR 0]     Adicionei 34 em fila->v[3]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 34 em fila->v[4]
+[CONSUMIDOR 2]   Li 62 em fila->v[5]
+[PRODUTOR 1]     Adicionei 2 em fila->v[4]
+[CONSUMIDOR 0]   Li 29 em fila->v[6]
+[PRODUTOR 0]     Adicionei 34 em fila->v[5]
+[PRODUTOR 1]     Adicionei 61 em fila->v[6]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 8 em fila->v[7]
+[PRODUTOR 0]     Adicionei 40 em fila->v[7]
+[CONSUMIDOR 0]   Li 49 em fila->v[0]
+[CONSUMIDOR 2]   Li 63 em fila->v[1]
+[PRODUTOR 1]     Adicionei 63 em fila->v[0]
+[PRODUTOR 0]     Adicionei 2 em fila->v[1]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 42 em fila->v[2]
+[CONSUMIDOR 0]   Li 34 em fila->v[3]
+[CONSUMIDOR 2]   Li 2 em fila->v[4]
+[PRODUTOR 0]     Adicionei 24 em fila->v[2]
+[PRODUTOR 1]     Adicionei 63 em fila->v[3]
+[PRODUTOR 0]     Adicionei 43 em fila->v[4]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 34 em fila->v[5]
+[CONSUMIDOR 2]   Li 61 em fila->v[6]
+[PRODUTOR 1]     Adicionei 29 em fila->v[5]
+[CONSUMIDOR 0]   Li 40 em fila->v[7]
+[PRODUTOR 0]     Adicionei 44 em fila->v[6]
+[PRODUTOR 1]     Adicionei 23 em fila->v[7]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 63 em fila->v[0]
+[PRODUTOR 0]     Adicionei 16 em fila->v[0]
+[CONSUMIDOR 2]   Li 2 em fila->v[1]
+[CONSUMIDOR 0]   Li 24 em fila->v[2]
+[PRODUTOR 1]     Adicionei 57 em fila->v[1]
+[PRODUTOR 0]     Adicionei 29 em fila->v[2]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 63 em fila->v[3]
+[PRODUTOR 1]     Adicionei 43 em fila->v[3]
+[CONSUMIDOR 0]   Li 43 em fila->v[4]
+[CONSUMIDOR 2]   Li 29 em fila->v[5]
+[PRODUTOR 0]     Adicionei 45 em fila->v[4]
+[PRODUTOR 1]     Adicionei 49 em fila->v[5]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 44 em fila->v[6]
+[CONSUMIDOR 0]   Li 23 em fila->v[7]
+[PRODUTOR 0]     Adicionei 60 em fila->v[6]
+[PRODUTOR 1]     Adicionei 60 em fila->v[7]
+[CONSUMIDOR 2]   Li 16 em fila->v[0]
+[PRODUTOR 0]     Adicionei 51 em fila->v[0]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 57 em fila->v[1]
+[PRODUTOR 1]     Adicionei 48 em fila->v[1]
+[CONSUMIDOR 1]   Li 29 em fila->v[2]
+[PRODUTOR 0]     Adicionei 61 em fila->v[2]
+[CONSUMIDOR 2]   Li 43 em fila->v[3]
+[PRODUTOR 1]     Adicionei 21 em fila->v[3]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 45 em fila->v[4]
+[CONSUMIDOR 1]   Li 49 em fila->v[5]
+[PRODUTOR 1]     Adicionei 25 em fila->v[4]
+[CONSUMIDOR 2]   Li 60 em fila->v[6]
+[PRODUTOR 0]     Adicionei 45 em fila->v[5]
+[PRODUTOR 1]     Adicionei 28 em fila->v[6]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 60 em fila->v[7]
+[CONSUMIDOR 1]   Li 51 em fila->v[0]
+[PRODUTOR 0]     Adicionei 29 em fila->v[7]
+[CONSUMIDOR 2]   Li 48 em fila->v[1]
+[PRODUTOR 1]     Adicionei 3 em fila->v[0]
+[PRODUTOR 0]     Adicionei 27 em fila->v[1]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 61 em fila->v[2]
+[CONSUMIDOR 1]   Li 21 em fila->v[3]
+[PRODUTOR 1]     Adicionei 63 em fila->v[2]
+[CONSUMIDOR 2]   Li 25 em fila->v[4]
+[PRODUTOR 0]     Adicionei 4 em fila->v[3]
+[PRODUTOR 1]     Adicionei 60 em fila->v[4]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 45 em fila->v[5]
+[CONSUMIDOR 1]   Li 28 em fila->v[6]
+[CONSUMIDOR 2]   Li 29 em fila->v[7]
+[PRODUTOR 0]     Adicionei 59 em fila->v[5]
+[PRODUTOR 1]     Adicionei 43 em fila->v[6]
+[PRODUTOR 1]     Adicionei 59 em fila->v[7]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 0]   Li 3 em fila->v[0]
+[CONSUMIDOR 1]   Li 27 em fila->v[1]
+[PRODUTOR 0]     Adicionei 60 em fila->v[0]
+[CONSUMIDOR 2]   Li 63 em fila->v[2]
+[PRODUTOR 1]     Adicionei 42 em fila->v[1]
+[PRODUTOR 0]     Adicionei 18 em fila->v[2]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 4 em fila->v[3]
+[PRODUTOR 1]     Adicionei 39 em fila->v[3]
+[CONSUMIDOR 2]   Li 60 em fila->v[4]
+[PRODUTOR 0]     Adicionei 6 em fila->v[4]
+[CONSUMIDOR 0]   Li 59 em fila->v[5]
+[PRODUTOR 1]     Adicionei 61 em fila->v[5]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 43 em fila->v[6]
+[CONSUMIDOR 2]   Li 59 em fila->v[7]
+[CONSUMIDOR 0]   Li 60 em fila->v[0]
+[PRODUTOR 0]     Adicionei 61 em fila->v[6]
+[PRODUTOR 1]     Adicionei 21 em fila->v[7]
+[PRODUTOR 1]     Adicionei 54 em fila->v[0]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 2]   Li 42 em fila->v[1]
+[PRODUTOR 0]     Adicionei 25 em fila->v[1]
+[CONSUMIDOR 1]   Li 18 em fila->v[2]
+[PRODUTOR 1]     Adicionei 63 em fila->v[2]
+[CONSUMIDOR 0]   Li 39 em fila->v[3]
+[PRODUTOR 1]     Adicionei 34 em fila->v[3]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 2]   Li 6 em fila->v[4]
+[PRODUTOR 0]     Adicionei 10 em fila->v[4]
+[CONSUMIDOR 0]   Li 61 em fila->v[5]
+[CONSUMIDOR 1]   Li 61 em fila->v[6]
+[PRODUTOR 1]     Adicionei 58 em fila->v[5]
+[PRODUTOR 0]     Adicionei 29 em fila->v[6]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 2]   Li 21 em fila->v[7]
+[PRODUTOR 1]     Adicionei 60 em fila->v[7]
+[CONSUMIDOR 0]   Li 54 em fila->v[0]
+[CONSUMIDOR 1]   Li 25 em fila->v[1]
+[PRODUTOR 0]     Adicionei 41 em fila->v[0]
+[PRODUTOR 1]     Adicionei 26 em fila->v[1]
+[PRODUTOR 0]     Buffer cheio. Esperando...
+[CONSUMIDOR 2]   Li 63 em fila->v[2]
+[PRODUTOR 0]     Adicionei 16 em fila->v[2]
+[PRODUTOR 1]     Buffer cheio. Esperando...
+[CONSUMIDOR 1]   Li 34 em fila->v[3]
+[PRODUTOR 1]     Adicionei 22 em fila->v[3]
+[CONSUMIDOR 0]   Li 10 em fila->v[4]
+[PRODUTOR 0]     Adicionei 50 em fila->v[4]
+[CONSUMIDOR 2]   Li 58 em fila->v[5]
+[CONSUMIDOR 1]   Li 29 em fila->v[6]
+[PRODUTOR 0]     Adicionei 44 em fila->v[5]
+[CONSUMIDOR 0]   Li 60 em fila->v[7]
+[PRODUTOR 0]     Adicionei 50 em fila->v[6]
+[CONSUMIDOR 2]   Li 41 em fila->v[0]
+[CONSUMIDOR 1]   Li 26 em fila->v[1]
+[CONSUMIDOR 0]   Li 16 em fila->v[2]
+[PRODUTOR 0]     Adicionei 52 em fila->v[7]
+[CONSUMIDOR 2]   Li 22 em fila->v[3]
+[CONSUMIDOR 1]   Li 50 em fila->v[4]
+[CONSUMIDOR 0]   Li 44 em fila->v[5]
+[CONSUMIDOR 2]   Li 50 em fila->v[6]
+[CONSUMIDOR 1]   Li 52 em fila->v[7]
+[CONSUMIDOR 0]   Buffer vazio. Esperando...
+[CONSUMIDOR 2]   Buffer vazio. Esperando...
+[CONSUMIDOR 1]   Buffer vazio. Esperando...
 
-Terminal 1 (servidor):
-Servidor rodando...
-Recebido: hello world
-Enviando: HELLO WORLD
-Recebido: teste de comunicacao
-Enviando: TESTE DE COMUNICACAO
-Recebido: sistemas operacionais
-Enviando: SISTEMAS OPERACIONAIS
 
-Terminal 2 (cliente):
-Cliente conectado. Digite mensagens:
-hello world
-Resposta: HELLO WORLD
-teste de comunicacao
-Resposta: TESTE DE COMUNICACAO
-sistemas operacionais
-Resposta: SISTEMAS OPERACIONAIS
-^D
-Encerrando cliente...
-
--- ANÁLISE --
-
-Este exercício implementa uma arquitetura cliente-servidor usando duas FIFOs para comunicação bidirecional, resolvendo o problema de que um processo não deve abrir a mesma FIFO para leitura e escrita simultaneamente.
-
-1. Duas FIFOs: O design usa duas FIFOs unidirecionais:
-   - `fifo_c2s` (cliente → servidor): Para requisições dos clientes
-   - `fifo_s2c` (servidor → cliente): Para respostas do servidor
-   
-   Isso evita conflitos e permite comunicação full-duplex sem deadlocks.
-
-2. Servidor como Daemon: O servidor roda em um loop infinito (`while(1)`), processando requisições continuamente. Ele:
-   - Abre a FIFO de requisições em modo de leitura (bloqueia até um cliente enviar dados)
-   - Lê a mensagem
-   - Processa (converte para maiúsculas usando `toupper()`)
-   - Abre a FIFO de respostas em modo de escrita
-   - Envia a resposta
-   - Fecha ambos os descritores e aguarda a próxima requisição
-
-3. Protocolo Request-Response: O cliente segue um padrão síncrono:
-   - Envia mensagem → fecha descritor de escrita
-   - Abre descritor de leitura → aguarda resposta
-   - Recebe resposta → fecha descritor de leitura
-   
-   Esse padrão garante que cada requisição tenha sua resposta correspondente.
-
-4. `toupper()`: Função da biblioteca `<ctype.h>` que converte um caractere para maiúscula. O loop `for` aplica a conversão em cada byte da mensagem.
-
-5. Múltiplos Clientes: O design suporta múltiplos clientes simultâneos, mas há uma limitação importante: a FIFO de resposta (`fifo_s2c`) é compartilhada. Se dois clientes enviarem mensagens simultaneamente, suas respostas podem ser misturadas. Uma solução profissional usaria uma FIFO exclusiva por cliente ou um protocolo de identificação.
-
-6. Verificação de Servidor: O cliente verifica se `fifo_c2s` existe antes de tentar se conectar, usando isso como indicador de que o servidor está rodando. Se a FIFO não existe, o cliente termina com uma mensagem de erro.
-
-7. Sincronização Implícita: O bloqueio em `open()` e `read()` fornece sincronização natural. Quando não há clientes, o servidor bloqueia em `open(O_RDONLY)`. Quando não há resposta pronta, o cliente bloqueia em `open(O_RDONLY)`.
-
--- CONCLUSÃO GERAL --
-
-Os exercícios deste laboratório demonstram o uso de FIFOs (Named Pipes) para comunicação entre processos no Linux. As principais diferenças em relação aos pipes anônimos (Lab 04) são:
-
-1. Persistência: FIFOs têm um nome no sistema de arquivos e persistem até serem removidas com `unlink()` ou `rm`.
-
-2. Processos Não Relacionados: Enquanto pipes anônimos só funcionam entre processos pai-filho, FIFOs permitem comunicação entre quaisquer processos que conheçam o nome da FIFO.
-
-3. Criação: FIFOs são criadas com `mkfifo()` (função ou comando shell), não com `pipe()`.
-
-4. Uso: Após criadas, FIFOs são usadas exatamente como pipes - através de `open()`, `read()`, `write()` e `close()`.
-
-5. Bloqueio: O `open()` bloqueia até que ambas as extremidades (leitura e escrita) estejam abertas, sincronizando automaticamente os processos.
-
-6. Limitações: Um processo não deve abrir a mesma FIFO para leitura e escrita. Para comunicação bidirecional, usa-se duas FIFOs.
-
-As FIFOs são fundamentais em sistemas Unix/Linux para implementar comunicação inter-processo (IPC), especialmente em arquiteturas cliente-servidor e pipelines de processamento distribuídos.
+-- COMENTÁRIOS --
+Note que os consumidores ficaram aguardando produtores colocarem mais itens no buffer... Erro na lógica do código? Não! 
+Apenas tosco da parte de quem definiu 2 produtores para 3 consumidores. Obviamente, dadas as regras impostas sobre o problema 
+pelo enunciado, a quantidade de itens produzidos é menor que a quantidade de itens consumidos caso a quantidade de produtores seja
+diferente da quantidade de consumidores em execução. Dãã!!
