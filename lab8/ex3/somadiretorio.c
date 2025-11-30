@@ -12,10 +12,17 @@ long soma_dir(const char *path) {
     struct stat st;
     char fullpath[1024];
     long total = 0;
-    if (!(dir = opendir(path))) return 0;
+    dir = opendir(path);
+    if (!dir) {
+        return 0;
+    }
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        if (strcmp(entry->d_name, ".") == 0) {
             continue;
+        }
+        if (strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
         snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entry->d_name);
         if (stat(fullpath, &st) == 0) {
             if (S_ISDIR(st.st_mode)) {

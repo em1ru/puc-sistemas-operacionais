@@ -22,11 +22,11 @@ int main() {
     key_t key = 1234;
     key_t semkey = 5678;
     struct shm *mem;
-    
+
     shmid = shmget(key, sizeof(struct shm), 0666);
     mem = (struct shm *)shmat(shmid, NULL, 0);
     semid = semget(semkey, 2, 0666);
-    
+
     while (1) {
         struct sembuf p_cheio = {1, -1, 0};
         struct sembuf p_mutex = {0, -1, 0};

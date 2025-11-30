@@ -23,16 +23,16 @@ int main() {
     key_t semkey = 5678;
     struct shm *mem;
     union semun sem_union;
-    
+
     shmid = shmget(key, sizeof(struct shm), IPC_CREAT | 0666);
     mem = (struct shm *)shmat(shmid, NULL, 0);
     semid = semget(semkey, 2, IPC_CREAT | 0666);
-    
+
     sem_union.val = 1;
     semctl(semid, 0, SETVAL, sem_union); // mutex
     sem_union.val = 0;
     semctl(semid, 1, SETVAL, sem_union); // cheio
-    
+
     mem->pos = 0;
     while (1) {
         char c = getchar();
@@ -47,7 +47,9 @@ int main() {
             mem->pos = 0;
         }
         semop(semid, &v_mutex, 1);
-        if (c == EOF) break;
+        if (c == EOF) {
+            break;
+        }
     }
     shmdt(mem);
     return 0;

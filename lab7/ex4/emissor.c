@@ -32,7 +32,9 @@ int main() {
     while (1) {
         printf("Digite mensagem: ");
         fflush(stdout);
-        if (fgets(input, MSG_SIZE, stdin) == NULL) break;
+        if (fgets(input, MSG_SIZE, stdin) == NULL) {
+            break;
+        }
         struct sembuf p_mutex = {0, -1, 0};
         struct sembuf v_mutex = {0, 1, 0};
         struct sembuf v_msg = {1, 1, 0};
@@ -40,7 +42,9 @@ int main() {
         strncpy(mem->msg, input, MSG_SIZE);
         semop(semid, &v_mutex, 1);
         semop(semid, &v_msg, 1);
-        if (strncmp(input, "fim", 3) == 0) break;
+        if (strncmp(input, "fim", 3) == 0) {
+            break;
+        }
     }
     shmdt(mem);
     return 0;

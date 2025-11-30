@@ -43,18 +43,24 @@ int main(int argc, char *argv[]) {
     int i;
     char letra = 'o';
     int semId;
+
     if (argc > 1) {
         semId = semget(8752, 1, 0666 | IPC_CREAT);
         setSemValue(semId);
         letra = 'x';
         sleep(2);
     } else {
-        while ((semId = semget(8752, 1, 0666)) < 0) {
+        while (1) {
+            semId = semget(8752, 1, 0666);
+            if (semId >= 0) {
+                break;
+            }
             putchar('.');
             fflush(stdout);
             sleep(1);
         }
     }
+
     for (i = 0; i < 10; i++) {
         semaforoP(semId);
         putchar(toupper(letra));
@@ -65,10 +71,13 @@ int main(int argc, char *argv[]) {
         semaforoV(semId);
         sleep(rand() % 2);
     }
+
     printf("\nProcesso %d terminou\n", getpid());
+
     if (argc > 1) {
         sleep(10);
         delSemValue(semId);
     }
+
     return 0;
 }

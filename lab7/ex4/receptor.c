@@ -31,7 +31,9 @@ int main() {
         semop(semid, &p_mutex, 1);
         printf("Recebido: %s", mem->msg);
         semop(semid, &v_mutex, 1);
-        if (strncmp(mem->msg, "fim", 3) == 0) break;
+        if (strncmp(mem->msg, "fim", 3) == 0) {
+            break;
+        }
     }
     shmdt(mem);
     return 0;

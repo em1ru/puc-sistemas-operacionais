@@ -11,10 +11,17 @@ void mostra_dir(const char *path, int nivel) {
     struct dirent *entry;
     struct stat st;
     char fullpath[1024];
-    if (!(dir = opendir(path))) return;
+    dir = opendir(path);
+    if (!dir) {
+        return;
+    }
     while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        if (strcmp(entry->d_name, ".") == 0) {
             continue;
+        }
+        if (strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
         snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entry->d_name);
         if (stat(fullpath, &st) == 0) {
             printf("%*s[%s]%s\n", nivel*2, "", entry->d_name, S_ISDIR(st.st_mode) ? " (dir)" : "");
