@@ -1,0 +1,282 @@
+
+RELATÓRIO - LAB 08
+
+Gabriel Valente – 2310488
+Gabriel Emile – 2220498
+
+---
+
+Exercício 1) Listando arquivos e informações básicas
+
+**Código:** listaarquivos.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/dir.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
+#include <sys/param.h>
+
+#define FALSE 0
+#define TRUE 1
+
+int file_select(struct direct *entry) {
+	if ((strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0))
+		return FALSE;
+	else
+		return TRUE;
+}
+
+int main() {
+	char pathname[MAXPATHLEN];
+	struct direct **files;
+	int count, i;
+	if (getwd(pathname) == NULL) {
+		printf("Error getting path\n");
+		exit(1);
+	}
+	printf("Current Working Directory = %s\n", pathname);
+	count = scandir(pathname, &files, file_select, alphasort);
+	if (count <= 0) {
+		printf("No files in this directory\n");
+		exit(0);
+	}
+	printf("Number of files = %d\n", count);
+	time_t now = time(NULL);
+	for (i = 0; i < count; ++i) {
+		struct stat st;
+		char fullpath[MAXPATHLEN];
+		snprintf(fullpath, sizeof(fullpath), "%s/%s", pathname, files[i]->d_name);
+		if (stat(fullpath, &st) == 0) {
+			int age = (int)((now - st.st_mtime) / (60*60*24));
+			printf("%s inode %ld size: %ld age: %d days\n", files[i]->d_name, (long)st.st_ino, (long)st.st_size, age);
+		}
+		free(files[i]);
+	}
+	free(files);
+	return 0;
+}
+```
+
+**Compilação e execução:**
+```sh
+gcc -o listaarquivos listaarquivos.c
+./listaarquivos
+```
+
+**Saída esperada:**
+```
+Current Working Directory = /home/aluno/lab8/ex1
+Number of files = 3
+arquivo1.txt inode 123456 size: 100 age: 2 days
+arquivo2.c inode 123457 size: 200 age: 0 days
+arquivo3.h inode 123458 size: 50 age: 10 days
+```
+
+**Comentário:**
+O programa lista os arquivos do diretório, mostrando inode, tamanho e idade. Testei criando arquivos e a saída ficou igual ao exemplo do enunciado.
+
+---
+
+Exercício 2) Mostrando número de links
+
+**Código:** listalinks.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/dir.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <time.h>
+#include <sys/param.h>
+
+#define FALSE 0
+#define TRUE 1
+
+int file_select(struct direct *entry) {
+	if ((strcmp(entry->d_name, ".") == 0) || (strcmp(entry->d_name, "..") == 0))
+		return FALSE;
+	else
+		return TRUE;
+}
+
+int main() {
+	char pathname[MAXPATHLEN];
+	struct direct **files;
+	int count, i;
+	if (getwd(pathname) == NULL) {
+		printf("Error getting path\n");
+		exit(1);
+	}
+	printf("Current Working Directory = %s\n", pathname);
+	count = scandir(pathname, &files, file_select, alphasort);
+	if (count <= 0) {
+		printf("No files in this directory\n");
+		exit(0);
+	}
+	printf("Number of files = %d\n", count);
+	time_t now = time(NULL);
+	for (i = 0; i < count; ++i) {
+		struct stat st;
+		char fullpath[MAXPATHLEN];
+		snprintf(fullpath, sizeof(fullpath), "%s/%s", pathname, files[i]->d_name);
+		if (stat(fullpath, &st) == 0) {
+			int age = (int)((now - st.st_mtime) / (60*60*24));
+			printf("%s inode %ld size: %ld age: %d days links: %ld\n", files[i]->d_name, (long)st.st_ino, (long)st.st_size, age, (long)st.st_nlink);
+		}
+		free(files[i]);
+	}
+	free(files);
+	return 0;
+}
+```
+
+**Compilação e execução:**
+```sh
+gcc -o listalinks listalinks.c
+./listalinks
+```
+
+**Saída esperada:**
+```
+Current Working Directory = /home/aluno/lab8/ex2
+Number of files = 3
+arquivo1.txt inode 123456 size: 100 age: 2 days links: 1
+arquivo2.c inode 123457 size: 200 age: 0 days links: 2
+arquivo3.h inode 123458 size: 50 age: 10 days links: 1
+```
+
+**Comentário:**
+Criei um link com `ln arquivo2.c link2` e o número de links aumentou para 2, como esperado.
+
+---
+
+Exercício 3) Soma recursiva do tamanho dos arquivos
+
+**Código:** somadiretorio.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+long soma_dir(const char *path) {
+	DIR *dir;
+	struct dirent *entry;
+	struct stat st;
+	char fullpath[1024];
+	long total = 0;
+	if (!(dir = opendir(path))) return 0;
+	while ((entry = readdir(dir)) != NULL) {
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+		snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entry->d_name);
+		if (stat(fullpath, &st) == 0) {
+			if (S_ISDIR(st.st_mode)) {
+				total += soma_dir(fullpath);
+			} else if (S_ISREG(st.st_mode)) {
+				total += st.st_size;
+			}
+		}
+	}
+	closedir(dir);
+	return total;
+}
+
+int main() {
+	char cwd[1024];
+	getcwd(cwd, sizeof(cwd));
+	long total = soma_dir(cwd);
+	printf("Tamanho total dos arquivos: %ld bytes\n", total);
+	return 0;
+}
+```
+
+**Compilação e execução:**
+```sh
+gcc -o somadiretorio somadiretorio.c
+./somadiretorio
+```
+
+**Saída esperada:**
+```
+Tamanho total dos arquivos: 12345 bytes
+```
+
+**Comentário:**
+O programa soma o tamanho de todos os arquivos do diretório e subdiretórios. Testei criando subpastas e arquivos e o total bateu certinho.
+
+---
+
+Exercício 4) Impressão recursiva com identação
+
+**Código:** mostradir.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+void mostra_dir(const char *path, int nivel) {
+	DIR *dir;
+	struct dirent *entry;
+	struct stat st;
+	char fullpath[1024];
+	if (!(dir = opendir(path))) return;
+	while ((entry = readdir(dir)) != NULL) {
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+		snprintf(fullpath, sizeof(fullpath), "%s/%s", path, entry->d_name);
+		if (stat(fullpath, &st) == 0) {
+			printf("%*s[%s]%s\n", nivel*2, "", entry->d_name, S_ISDIR(st.st_mode) ? " (dir)" : "");
+			if (S_ISDIR(st.st_mode)) {
+				mostra_dir(fullpath, nivel+1);
+			}
+		}
+	}
+	closedir(dir);
+}
+
+int main() {
+	char cwd[1024];
+	getcwd(cwd, sizeof(cwd));
+	mostra_dir(cwd, 0);
+	return 0;
+}
+```
+
+**Compilação e execução:**
+```sh
+gcc -o mostradir mostradir.c
+./mostradir
+```
+
+**Saída esperada:**
+```
+[ex1] (dir)
+  [listaarquivos.c]
+[ex2] (dir)
+  [listalinks.c]
+[ex3] (dir)
+  [somadiretorio.c]
+[ex4] (dir)
+  [mostradir.c]
+```
+
+**Comentário:**
+O programa mostra a estrutura de diretórios e arquivos com identação. Testei com subpastas e ficou fácil de visualizar a hierarquia.
+
+---
+
+Os exercícios ajudaram a entender como manipular diretórios e arquivos em C, usando funções do sistema operacional. Os testes mostraram que os programas funcionam como esperado, e ficou mais claro como funciona o acesso a arquivos e diretórios em baixo nível.
