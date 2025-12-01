@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <dirent.h>
 
 #include "protocol.h" // Inclui nossa definição de SFSMessage
 
@@ -21,68 +22,277 @@ void error(char *msg) {
     exit(1);
 }
 
-/* * Função que processa o pedido de LEITURA (READ)
- * Lê 16 bytes do arquivo solicitado e preenche a mensagem de resposta.
- */
+/* Função auxiliar para construir o caminho completo */
+void build_full_path(char *full_path, size_t size, int owner_id, const char *path) {
+    const char *clean_path = path;
+    if (clean_path[0] == '/') clean_path++; // Remove '/' inicial se houver
+    snprintf(full_path, size, "%s/A%d/%s", ROOT_DIR, owner_id, clean_path);
+}
+
+/* ========== HANDLE READ ========== */
+/* Lê 16 bytes do arquivo solicitado e preenche a mensagem de resposta. */
 void handle_read(SFSMessage *msg) {
     char full_path[512];
     FILE *fp;
     
-    // 1. Constrói o caminho real no sistema de arquivos do Linux
-    // O PDF diz que cada processo Ax tem seu home: /A1, /A2, etc.
-    // Estrutura física será: ./fs_root/A1/arquivo.txt
-    // msg->path já deve vir com o caminho relativo, ex: "subdir/arquivo.txt"
-    // O PDF sugere que o owner define o diretório raiz do usuário.
-    
-    // Formato: ./fs_root/A{owner_id}/{path}
-    // Obs: msg->path deve ser limpo de barras iniciais para evitar sair da raiz
-    char *clean_path = msg->path;
-    if (clean_path[0] == '/') clean_path++; // Remove '/' inicial se houver
+    build_full_path(full_path, sizeof(full_path), msg->owner_id, msg->path);
+    printf("[SFSS] READ: %s (Offset: %d)\n", full_path, msg->offset);
 
-    // Nota: O enunciado menciona /A0 como compartilhado.
-    // Se owner for 0, acessa A0. Se for 1..5, acessa A1..A5.
-    snprintf(full_path, sizeof(full_path), "%s/A%d/%s", ROOT_DIR, msg->owner_id, clean_path);
-
-    printf("[SFSS] Lendo arquivo: %s (Offset: %d)\n", full_path, msg->offset);
-
-    // 2. Tenta abrir o arquivo para leitura binária
     fp = fopen(full_path, "rb");
-    
-    // Prepara a resposta (copiando dados básicos da requisição)
     msg->type = REP_READ;
-    // O owner e path já estão na struct, mantemos igual
     
     if (fp == NULL) {
-        // Erro ao abrir (arquivo não existe, permissão, etc)
         printf("[SFSS] Erro ao abrir arquivo: %s\n", strerror(errno));
-        msg->status = -1; // Código de erro genérico (poderia ser -errno)
-        msg->nrnames = 0; // Zera campos não usados
+        msg->status = -1;
         memset(msg->data, 0, BLOCK_SIZE);
     } else {
-        // 3. Pula para o offset desejado
         if (fseek(fp, msg->offset, SEEK_SET) != 0) {
-            // Se o offset for além do tamanho do arquivo
             msg->status = -2; // Erro de seek
             memset(msg->data, 0, BLOCK_SIZE);
         } else {
-            // 4. Lê os 16 bytes (BLOCK_SIZE)
             size_t bytes_read = fread(msg->data, 1, BLOCK_SIZE, fp);
-            
-            if (bytes_read > 0) {
-                msg->status = bytes_read; // Sucesso: retorna quantos bytes leu
-            } else {
-                // Chegou no fim do arquivo (EOF) ou erro de leitura
-                msg->status = 0; // 0 bytes lidos (EOF)
-            }
+            msg->status = (bytes_read > 0) ? (int)bytes_read : 0;
         }
         fclose(fp);
     }
 }
 
+/* ========== HANDLE WRITE ========== */
+/* Escreve 16 bytes no arquivo. Cria o arquivo se não existir.
+ * Se offset > tamanho atual, preenche com espaços (0x20).
+ * Se payload vazio e offset=0, remove o arquivo. */
+void handle_write(SFSMessage *msg) {
+    char full_path[512];
+    FILE *fp;
+    
+    build_full_path(full_path, sizeof(full_path), msg->owner_id, msg->path);
+    printf("[SFSS] WRITE: %s (Offset: %d)\n", full_path, msg->offset);
+
+    msg->type = REP_WRITE;
+
+    // Caso especial: payload vazio e offset=0 significa REMOVER arquivo
+    int is_empty_payload = 1;
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        if (msg->data[i] != 0) {
+            is_empty_payload = 0;
+            break;
+        }
+    }
+    
+    if (is_empty_payload && msg->offset == 0) {
+        // Remove o arquivo
+        if (remove(full_path) == 0) {
+            printf("[SFSS] Arquivo removido: %s\n", full_path);
+            msg->status = 0; // Sucesso
+        } else {
+            printf("[SFSS] Erro ao remover arquivo: %s\n", strerror(errno));
+            msg->status = -1;
+        }
+        return;
+    }
+
+    // Abre para leitura+escrita, cria se não existir
+    fp = fopen(full_path, "r+b");
+    if (fp == NULL) {
+        // Arquivo não existe, tenta criar
+        fp = fopen(full_path, "w+b");
+    }
+    
+    if (fp == NULL) {
+        printf("[SFSS] Erro ao abrir/criar arquivo: %s\n", strerror(errno));
+        msg->status = -1;
+        return;
+    }
+
+    // Verifica tamanho atual do arquivo
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+
+    // Se offset > tamanho atual, preenche com espaços (0x20)
+    if (msg->offset > file_size) {
+        fseek(fp, file_size, SEEK_SET);
+        long gap = msg->offset - file_size;
+        for (long i = 0; i < gap; i++) {
+            fputc(0x20, fp); // Whitespace character
+        }
+    }
+
+    // Posiciona e escreve os 16 bytes
+    fseek(fp, msg->offset, SEEK_SET);
+    size_t written = fwrite(msg->data, 1, BLOCK_SIZE, fp);
+    
+    if (written == BLOCK_SIZE) {
+        msg->status = msg->offset; // Sucesso: retorna o offset
+        printf("[SFSS] Escrita OK: %zu bytes no offset %d\n", written, msg->offset);
+    } else {
+        msg->status = -3; // Erro de escrita
+        printf("[SFSS] Erro na escrita: apenas %zu bytes\n", written);
+    }
+    
+    fclose(fp);
+}
+
+/* ========== HANDLE CREATE DIR ========== */
+/* Cria um novo subdiretório dentro do path especificado. */
+void handle_create_dir(SFSMessage *msg) {
+    char full_path[512];
+    char new_dir_path[512];
+    
+    build_full_path(full_path, sizeof(full_path), msg->owner_id, msg->path);
+    
+    // Constrói o caminho do novo diretório: path + "/" + secondary_name
+    snprintf(new_dir_path, sizeof(new_dir_path), "%s/%s", full_path, msg->secondary_name);
+    
+    printf("[SFSS] CREATE_DIR: %s\n", new_dir_path);
+    
+    msg->type = REP_CREATE_DIR;
+    
+    if (mkdir(new_dir_path, 0777) == 0) {
+        // Sucesso: atualiza o path na resposta para incluir o novo diretório
+        char *clean_path = msg->path;
+        if (clean_path[0] == '/') clean_path++;
+        
+        if (strlen(clean_path) > 0) {
+            snprintf(msg->path, MAX_PATH_LEN, "%s/%s", clean_path, msg->secondary_name);
+        } else {
+            snprintf(msg->path, MAX_PATH_LEN, "%s", msg->secondary_name);
+        }
+        msg->status = strlen(msg->path);
+        printf("[SFSS] Diretório criado: %s\n", new_dir_path);
+    } else {
+        if (errno == EEXIST) {
+            printf("[SFSS] Diretório já existe: %s\n", new_dir_path);
+            msg->status = -2; // Já existe
+        } else {
+            printf("[SFSS] Erro ao criar diretório: %s\n", strerror(errno));
+            msg->status = -1; // Erro genérico
+        }
+    }
+}
+
+/* ========== HANDLE REMOVE ========== */
+/* Remove um arquivo ou diretório do path especificado. */
+void handle_remove(SFSMessage *msg) {
+    char full_path[512];
+    char target_path[512];
+    struct stat st;
+    
+    build_full_path(full_path, sizeof(full_path), msg->owner_id, msg->path);
+    
+    // Constrói o caminho do alvo: path + "/" + secondary_name
+    snprintf(target_path, sizeof(target_path), "%s/%s", full_path, msg->secondary_name);
+    
+    printf("[SFSS] REMOVE: %s\n", target_path);
+    
+    msg->type = REP_REMOVE;
+    
+    // Verifica se é arquivo ou diretório
+    if (stat(target_path, &st) != 0) {
+        printf("[SFSS] Alvo não encontrado: %s\n", strerror(errno));
+        msg->status = -1; // Não existe
+        return;
+    }
+    
+    int result;
+    if (S_ISDIR(st.st_mode)) {
+        // É diretório: usa rmdir (só funciona se estiver vazio)
+        result = rmdir(target_path);
+    } else {
+        // É arquivo: usa remove
+        result = remove(target_path);
+    }
+    
+    if (result == 0) {
+        // Sucesso: retorna o path atualizado (sem o item removido)
+        msg->status = strlen(msg->path);
+        printf("[SFSS] Removido com sucesso: %s\n", target_path);
+    } else {
+        if (errno == ENOTEMPTY) {
+            printf("[SFSS] Diretório não está vazio: %s\n", target_path);
+            msg->status = -3; // Diretório não vazio
+        } else {
+            printf("[SFSS] Erro ao remover: %s\n", strerror(errno));
+            msg->status = -1;
+        }
+    }
+}
+
+/* ========== HANDLE LISTDIR ========== */
+/* Lista todos os arquivos e subdiretórios de um diretório.
+ * Retorna os nomes concatenados em allfilenames e as posições em fstlstpositions. */
+void handle_listdir(SFSMessage *msg) {
+    char full_path[512];
+    DIR *dir;
+    struct dirent *entry;
+    struct stat st;
+    char entry_path[512];
+    
+    build_full_path(full_path, sizeof(full_path), msg->owner_id, msg->path);
+    
+    printf("[SFSS] LISTDIR: %s\n", full_path);
+    
+    msg->type = REP_LISTDIR;
+    
+    dir = opendir(full_path);
+    if (dir == NULL) {
+        printf("[SFSS] Erro ao abrir diretório: %s\n", strerror(errno));
+        msg->status = -1;
+        msg->nrnames = -1;
+        return;
+    }
+    
+    // Inicializa contadores
+    int pos = 0;  // Posição atual no buffer allfilenames
+    int count = 0; // Número de entradas
+    
+    memset(msg->allfilenames, 0, DIR_BUFFER_SIZE);
+    memset(msg->fstlstpositions, 0, sizeof(msg->fstlstpositions));
+    
+    while ((entry = readdir(dir)) != NULL && count < MAX_DIR_ENTRIES) {
+        // Ignora "." e ".."
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        int name_len = strlen(entry->d_name);
+        
+        // Verifica se cabe no buffer
+        if (pos + name_len >= DIR_BUFFER_SIZE) {
+            printf("[SFSS] Buffer cheio, truncando listagem\n");
+            break;
+        }
+        
+        // Copia o nome para o buffer
+        strcpy(&msg->allfilenames[pos], entry->d_name);
+        
+        // Preenche as posições
+        msg->fstlstpositions[count].start_pos = pos;
+        msg->fstlstpositions[count].end_pos = pos + name_len - 1;
+        
+        // Verifica se é diretório ou arquivo
+        snprintf(entry_path, sizeof(entry_path), "%s/%s", full_path, entry->d_name);
+        if (stat(entry_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+            msg->fstlstpositions[count].is_dir = IS_DIR;
+        } else {
+            msg->fstlstpositions[count].is_dir = IS_FILE;
+        }
+        
+        pos += name_len + 1; // +1 para o null terminator entre nomes
+        count++;
+    }
+    
+    closedir(dir);
+    
+    msg->nrnames = count;
+    msg->status = count; // Sucesso: retorna número de entradas
+    
+    printf("[SFSS] Listagem: %d entradas encontradas\n", count);
+}
+
 int main(int argc, char **argv) {
     int sockfd; /* socket */
     int portno; /* porta para escutar */
-    int clientlen; /* tamanho do endereço do cliente */
+    socklen_t clientlen; /* tamanho do endereço do cliente */
     struct sockaddr_in serveraddr; /* endereço do servidor */
     struct sockaddr_in clientaddr; /* endereço do cliente */
     struct hostent *hostp; /* info do host cliente */
@@ -162,12 +372,20 @@ int main(int argc, char **argv) {
                 break;
                 
             case REQ_WRITE:
-                printf("[SFSS] WRITE solicitado (Ainda não implementado)\n");
-                msg.type = REP_WRITE;
-                msg.status = -1; // Not implemented
+                handle_write(&msg);
                 break;
                 
-            // Outros cases (REQ_CREATE_DIR, REQ_LISTDIR...) virão aqui
+            case REQ_CREATE_DIR:
+                handle_create_dir(&msg);
+                break;
+                
+            case REQ_REMOVE:
+                handle_remove(&msg);
+                break;
+                
+            case REQ_LISTDIR:
+                handle_listdir(&msg);
+                break;
             
             default:
                 printf("[SFSS] Tipo de mensagem desconhecido: %d\n", msg.type);
