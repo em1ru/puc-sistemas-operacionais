@@ -1,54 +1,38 @@
-# Makefile para KernelSim
-# Trabalho de Sistemas Operacionais
-
 CC = gcc
-CFLAGS = -Wall -Wextra -std=gnu99 -D_DEFAULT_SOURCE
-TARGET = kernelsim
-SRC = kernel.c
+CFLAGS = -Wall -Wextra
+PORT = 3999
 
-# Compilação padrão
-all: $(TARGET)
+# Alvos principais
+all: sfss kernel
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
+# Compilação do Servidor
+sfss: sfss.c protocol.h
+	$(CC) $(CFLAGS) sfss.c -o sfss
+
+# Compilação do Kernel
+kernel: kernel.c protocol.h
+	$(CC) $(CFLAGS) kernel.c -o kernel
+
+# --- ALVO MÁGICO PARA RODAR TUDO ---
+# 1. Compila tudo (all)
+# 2. Inicia o sfss em background (&) e salva o PID dele num arquivo
+# 3. Redireciona a saída do sfss para sfss.log (para não poluir a tela do kernel)
+# 4. Espera 1 segundo para garantir que o socket abriu
+# 5. Roda o kernel
+# 6. Ao final, mata o processo do servidor usando o PID salvo
+run: all
+	@echo "--- [Makefile] Iniciando Servidor SFSS na porta $(PORT) ---"
+	@./sfss $(PORT) > sfss.log 2>&1 & echo $$! > sfss.pid
+	@sleep 1
+	@echo "--- [Makefile] Servidor rodando (PID salvo). Logs em 'sfss.log' ---"
+	@echo "--- [Makefile] Iniciando KernelSim agora... ---"
 	@echo ""
-	@echo "✓ Compilação concluída com sucesso!"
-	@echo "  Execute com: ./$(TARGET)"
+	@./kernel || (echo "Kernel falhou"; kill `cat sfss.pid`; rm sfss.pid; exit 1)
 	@echo ""
+	@echo "--- [Makefile] Simulação finalizada. Encerrando Servidor... ---"
+	@kill `cat sfss.pid` && rm sfss.pid
+	@echo "--- [Makefile] Tudo limpo. Confira 'sfss.log' para ver o que o servidor fez. ---"
 
-# Compilação com otimização
-release: CFLAGS += -O2
-release: clean $(TARGET)
-
-# Compilação para debug (com símbolos)
-debug: CFLAGS += -g -DDEBUG=1
-debug: clean $(TARGET)
-
-# Limpeza
+# Limpeza dos binários e logs
 clean:
-	rm -f $(TARGET)
-	@echo "✓ Arquivos de compilação removidos"
-
-# Execução
-run: $(TARGET)
-	./$(TARGET)
-
-# Verificação de vazamentos de memória (requer valgrind)
-valgrind: debug
-	valgrind --leak-check=full --show-leak-kinds=all ./$(TARGET)
-
-# Ajuda
-help:
-	@echo "Makefile para KernelSim"
-	@echo ""
-	@echo "Alvos disponíveis:"
-	@echo "  make          - Compila o simulador (padrão)"
-	@echo "  make release  - Compila com otimizações"
-	@echo "  make debug    - Compila com símbolos de debug"
-	@echo "  make clean    - Remove arquivos compilados"
-	@echo "  make run      - Compila e executa"
-	@echo "  make valgrind - Executa com valgrind (debug de memória)"
-	@echo "  make help     - Exibe esta ajuda"
-	@echo ""
-
-.PHONY: all release debug clean run valgrind help
+	rm -f sfss kernel sfss.log sfss.pid

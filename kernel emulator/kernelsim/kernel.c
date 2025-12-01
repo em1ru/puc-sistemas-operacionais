@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <sys/select.h>
+#include <string.h>
 
 /* ========== CONFIGURAÇÕES DE REDE ========== */
 #include <netdb.h>       
@@ -17,8 +18,9 @@
 /* ========== ESTRUTURAS E FUNÇÕES PARA FILE/DIR RESPONSE QUEUE ========== */
 
 // Fila circular para armazenar respostas do servidor aguardando IRQ1 (arquivo) e IRQ2 (diretório)
+#define QUEUE_SIZE 20 
 typedef struct {
-    SFSMessage buffer[100]; // Buffer para até 100 mensagens de respostas pendentes
+    SFSMessage buffer[QUEUE_SIZE]; // Buffer para até 100 mensagens de respostas pendentes
     int head;
     int tail;
     int count;
@@ -26,13 +28,13 @@ typedef struct {
 
 // Funções auxiliares para fila (pode colocar antes do main)
 void init_queue(ResponseQueue *q) { q->head = 0; q->tail = 0; q->count = 0; }
-int is_full(ResponseQueue *q) { return q->count >= 20; }
+int is_full(ResponseQueue *q) { return q->count >= QUEUE_SIZE; }
 int is_empty(ResponseQueue *q) { return q->count == 0; }
 
 void push_msg(ResponseQueue *q, SFSMessage msg) {
     if (is_full(q)) return; // Descarte silencioso ou log de erro
     q->buffer[q->tail] = msg;
-    q->tail = (q->tail + 1) % 20;
+    q->tail = (q->tail + 1) % QUEUE_SIZE;
     q->count++;
 }
 
@@ -40,7 +42,7 @@ SFSMessage pop_msg(ResponseQueue *q) {
     SFSMessage msg; // Retorno vazio se erro
     if (is_empty(q)) return msg; 
     msg = q->buffer[q->head];
-    q->head = (q->head + 1) % 20;
+    q->head = (q->head + 1) % QUEUE_SIZE;
     q->count--;
     return msg;
 }
@@ -596,6 +598,31 @@ int main(void) {
                                         kill(lista_cp[current_idx].pid, SIGCONT);
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // Processa Recebimento de Rede (UDP) ---
+                    if (FD_ISSET(sockfd, &read_fds)) {
+                        SFSMessage msg_in;
+                        int serverlen = sizeof(serveraddr);
+                        
+                        // Recebe a resposta do servidor
+                        ssize_t n = recvfrom(sockfd, &msg_in, sizeof(SFSMessage), 0, 
+                                            (struct sockaddr *)&serveraddr, (socklen_t*)&serverlen);
+                        
+                        if (n > 0) {
+                            if (DEBUG) fprintf(stderr, "[KERNEL] UDP recebido. Tipo: %d Owner: A%d\n", 
+                                              msg_in.type, msg_in.owner_id);
+
+                            // Classifica em fila de Arquivo ou Diretório para aguardar IRQ
+                            // O enunciado diz que READ/WRITE são operações de Arquivo (IRQ1)
+                            if (msg_in.type == REP_READ || msg_in.type == REP_WRITE) {
+                                push_msg(&file_queue, msg_in);
+                            } 
+                            // Create, Remove, ListDir são operações de Diretório (IRQ2)
+                            else {
+                                push_msg(&dir_queue, msg_in);
                             }
                         }
                     }
