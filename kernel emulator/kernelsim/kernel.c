@@ -8,6 +8,43 @@
 #include <time.h>
 #include <sys/select.h>
 
+/* ========== CONFIGURAÇÕES DE REDE ========== */
+#include <netdb.h>       
+#include <arpa/inet.h>   
+#include <sys/socket.h>  
+#include "protocol.h"    
+
+/* ========== ESTRUTURAS E FUNÇÕES PARA FILE/DIR RESPONSE QUEUE ========== */
+
+// Fila circular para armazenar respostas do servidor aguardando IRQ1 (arquivo) e IRQ2 (diretório)
+typedef struct {
+    SFSMessage buffer[100]; // Buffer para até 100 mensagens de respostas pendentes
+    int head;
+    int tail;
+    int count;
+} ResponseQueue;
+
+// Funções auxiliares para fila (pode colocar antes do main)
+void init_queue(ResponseQueue *q) { q->head = 0; q->tail = 0; q->count = 0; }
+int is_full(ResponseQueue *q) { return q->count >= 20; }
+int is_empty(ResponseQueue *q) { return q->count == 0; }
+
+void push_msg(ResponseQueue *q, SFSMessage msg) {
+    if (is_full(q)) return; // Descarte silencioso ou log de erro
+    q->buffer[q->tail] = msg;
+    q->tail = (q->tail + 1) % 20;
+    q->count++;
+}
+
+SFSMessage pop_msg(ResponseQueue *q) {
+    SFSMessage msg; // Retorno vazio se erro
+    if (is_empty(q)) return msg; 
+    msg = q->buffer[q->head];
+    q->head = (q->head + 1) % 20;
+    q->count--;
+    return msg;
+}
+
 /* ========== CONFIGURAÇÕES DO SIMULADOR ========== */
 #define NUM_PROCESSOS 7         // kernel, intercontrol, A1, ..., A5
 #define NUM_APPS 5              // A1 até A5
@@ -19,6 +56,7 @@
 #define PROB_IRQ2 5             // Probabilidade de IRQ2 (D2) em % - sugerido 5%
 #define PROB_SYSCALL 15         // Probabilidade de syscall em cada iteração (%)
 #define DEBUG 1                 // Ativa logs detalhados (0 = desativa)
+
 /* ========== DEFINIÇÃO DE TIPOS E ESTRUTURAS ========== */
 
 // Estados possíveis de um processo
@@ -76,6 +114,8 @@ typedef struct controleProcesso {
     // Contexto da syscall pendente (útil para debug/logs)
     Device pending_device;      // Dispositivo da syscall bloqueante
     SyscallOp pending_op;       // Operação da syscall bloqueante
+    // Área para o Kernel depositar a resposta do servidor para o processo ler
+    SFSMessage buffer_resposta;
 } ControleProcesso;
 
 /* ========== VARIÁVEIS GLOBAIS (MEMÓRIA COMPARTILHADA) ========== */
@@ -366,6 +406,33 @@ int main(void) {
             if (i == 0) {
                 fprintf(stderr, "[KERNEL] Iniciando...\n");
 
+                // --- CONFIGURAÇÃO DE REDE DO KERNEL ---
+                int sockfd;
+                struct sockaddr_in serveraddr;
+                struct hostent *server;
+                int portno = 3999; // A mesma porta que você usou no sfss
+                char *hostname = "localhost";
+
+                sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+                if (sockfd < 0) { perror("ERRO abrindo socket"); exit(1); }
+
+                server = gethostbyname(hostname);
+                if (server == NULL) { fprintf(stderr,"ERRO, host não encontrado\n"); exit(0); }
+
+                bzero((char *) &serveraddr, sizeof(serveraddr));
+                serveraddr.sin_family = AF_INET;
+                bcopy((char *)server->h_addr, (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+                serveraddr.sin_port = htons(portno);
+
+                // Inicializa as filas de resposta
+                ResponseQueue file_queue; // Para respostas de Arquivo (IRQ1)
+                ResponseQueue dir_queue;  // Para respostas de Diretório (IRQ2)
+                init_queue(&file_queue);
+                init_queue(&dir_queue);
+
+                // Adiciona o socket ao cálculo do max_fd para o select
+                if (sockfd > max_fd) max_fd = sockfd;
+
                 // Fecha extremidades não usadas dos pipes
                 close(pipe_irq[1]);      // Kernel não escreve IRQs
                 close(pipe_syscall[1]);  // Kernel não escreve syscalls
@@ -429,6 +496,7 @@ int main(void) {
                     FD_ZERO(&read_fds);
                     FD_SET(pipe_irq[0], &read_fds);
                     FD_SET(pipe_syscall[0], &read_fds);
+                    FD_SET(sockfd, &read_fds); // Escuta o socket UDP
                     
                     // Timeout de 1 segundo
                     struct timeval timeout;
@@ -480,40 +548,52 @@ int main(void) {
                                 }
                             }
                             else if (msg.irq_type == 1) {
-                                // IRQ1: D1 completou
-                                
-                                fprintf(stderr, "[KERNEL] IRQ1 recebido (D1 finished)\n");
-                                
-                                int proc_idx = dequeue(fila_d1);
-                                
-                                if (proc_idx != -1) {
-                                    lista_cp[proc_idx].estado = READY;
-                                    fprintf(stderr, "[KERNEL] A%d desbloqueado (D1)\n", proc_idx);
+                                if (!is_empty(&file_queue)) {
+                                    // 1. Pega a resposta que chegou da rede e estava na fila
+                                    SFSMessage resposta = pop_msg(&file_queue);
+                                    int proc_idx = resposta.owner_id; // Identifica quem pediu (A1..A5)
                                     
+                                    // 2. Copia a resposta para a memória do processo
+                                    lista_cp[proc_idx].buffer_resposta = resposta;
+                                    
+                                    // 3. Desbloqueia o processo (Tira de BLOCKED)
+                                    // Nota: Se estava bloqueado esperando arquivo, estava em BLOCKED_D1_R/W
+                                    lista_cp[proc_idx].estado = READY;
+                                    
+                                    if (DEBUG) {
+                                        fprintf(stderr, "[KERNEL] IRQ1: Entregando resposta de ARQUIVO para A%d\n", proc_idx);
+                                    }
+
+                                    // 4. Preempção: Se o processo acordado tiver prioridade ou for a vez dele
+                                    // (Aqui simplificamos: se o atual não está rodando, roda este)
                                     if (lista_cp[current_idx].estado != RUNNING) {
                                         current_idx = proc_idx;
                                         lista_cp[current_idx].estado = RUNNING;
                                         kill(lista_cp[current_idx].pid, SIGCONT);
-                                        fprintf(stderr, "[KERNEL] A%d escalonado imediatamente\n", proc_idx);
                                     }
+                                } else {
+                                    if (DEBUG) fprintf(stderr, "[KERNEL] IRQ1 recebido, mas fila de Arquivos vazia.\n");
                                 }
                             }
                             else if (msg.irq_type == 2) {
-                                // IRQ2: D2 completou
+                                // --- IRQ2: O InterController permitiu processar DIRETÓRIOS ---
+                                // (Lógica idêntica à acima, mas usando dir_queue)
                                 
-                                fprintf(stderr, "[KERNEL] IRQ2 recebido (D2 finished)\n");
-                                
-                                int proc_idx = dequeue(fila_d2);
-                                
-                                if (proc_idx != -1) {
+                                if (!is_empty(&dir_queue)) {
+                                    SFSMessage resposta = pop_msg(&dir_queue);
+                                    int proc_idx = resposta.owner_id;
+                                    
+                                    lista_cp[proc_idx].buffer_resposta = resposta;
                                     lista_cp[proc_idx].estado = READY;
-                                    fprintf(stderr, "[KERNEL] A%d desbloqueado (D2)\n", proc_idx);
+                                    
+                                    if (DEBUG) {
+                                        fprintf(stderr, "[KERNEL] IRQ2: Entregando resposta de DIRETÓRIO para A%d\n", proc_idx);
+                                    }
                                     
                                     if (lista_cp[current_idx].estado != RUNNING) {
                                         current_idx = proc_idx;
                                         lista_cp[current_idx].estado = RUNNING;
                                         kill(lista_cp[current_idx].pid, SIGCONT);
-                                        fprintf(stderr, "[KERNEL] A%d escalonado imediatamente\n", proc_idx);
                                     }
                                 }
                             }
@@ -525,79 +605,43 @@ int main(void) {
                         ssize_t bytes_read = read(pipe_syscall[0], &msg, sizeof(Mensagem));
                         
                         if (bytes_read == sizeof(Mensagem) && msg.type == MSG_SYSCALL) {
-                            
                             int proc_idx = pid_to_index(msg.remetente_pid);
+                            if (proc_idx < 1 || proc_idx > NUM_APPS) continue;
+
+                            // 1. Lê a requisição completa da memória compartilhada
+                            SFSMessage req = lista_cp[proc_idx].buffer_resposta;
                             
-                            if (proc_idx < 1 || proc_idx > NUM_APPS) {
-                                fprintf(stderr, "[KERNEL] ERRO: Syscall de PID inválido %d\n", 
-                                        msg.remetente_pid);
-                                continue;
+                            if (DEBUG) {
+                                fprintf(stderr, "[KERNEL] Syscall de A%d: Tipo %d no Path '%s'\n", 
+                                        proc_idx, req.type, req.path);
                             }
-                            
-                            const char *op_str = (msg.op == OP_READ) ? "READ" : 
-                                               (msg.op == OP_WRITE) ? "WRITE" : "EXECUTE";
-                            
-                            fprintf(stderr, "[KERNEL] Syscall de A%d: %s D%d\n", 
-                                    proc_idx, op_str, msg.device);
-                            
-                            lista_cp[proc_idx].pending_device = msg.device;
-                            lista_cp[proc_idx].pending_op = msg.op;
-                            
-                            if (msg.op == OP_EXECUTE) {
-                                // Operação X - não bloqueia
-                                if (DEBUG) {
-                                    fprintf(stderr, "[KERNEL] A%d: operação X (não bloqueia)\n", proc_idx);
-                                }
+
+                            // 2. Envia para o servidor SFSS via UDP
+                            sendto(sockfd, &req, sizeof(SFSMessage), 0, 
+                                   (struct sockaddr *)&serveraddr, sizeof(serveraddr));
+
+                            // 3. Define o estado de bloqueio baseado no tipo de operação
+                            // O PDF associa IRQ1 a Arquivos e IRQ2 a Diretórios
+                            if (req.type == REQ_READ || req.type == REQ_WRITE) {
+                                // Operação de Arquivo -> Bloqueia em "D1"
+                                lista_cp[proc_idx].estado = BLOCKED_D1_R; // Usando _R como genérico para bloqueio
+                            } else {
+                                // Operação de Diretório (Create, Remove, List) -> Bloqueia em "D2"
+                                lista_cp[proc_idx].estado = BLOCKED_D2_R; 
                             }
-                            else {
-                                // Operações R/W - bloqueiam
-                                if (msg.device == DEV_D1) {
-                                    lista_cp[proc_idx].d1_count++;
-                                    
-                                    if (msg.op == OP_READ) {
-                                        lista_cp[proc_idx].estado = BLOCKED_D1_R;
-                                    } else {
-                                        lista_cp[proc_idx].estado = BLOCKED_D1_W;
-                                    }
-                                    
-                                    enqueue(fila_d1, proc_idx);
-                                    
-                                    if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] A%d bloqueado em D1\n", proc_idx);
-                                    }
-                                }
-                                else if (msg.device == DEV_D2) {
-                                    lista_cp[proc_idx].d2_count++;
-                                    
-                                    if (msg.op == OP_READ) {
-                                        lista_cp[proc_idx].estado = BLOCKED_D2_R;
-                                    } else {
-                                        lista_cp[proc_idx].estado = BLOCKED_D2_W;
-                                    }
-                                    
-                                    enqueue(fila_d2, proc_idx);
-                                    
-                                    if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] A%d bloqueado em D2\n", proc_idx);
-                                    }
-                                }
-                                
-                                kill(lista_cp[proc_idx].pid, SIGSTOP);
-                                
-                                if (proc_idx == current_idx) {
-                                    int next_idx = find_next_ready(current_idx);
-                                    
-                                    if (next_idx != -1) {
-                                        fprintf(stderr, "[KERNEL] Trocando contexto: A%d (bloqueado) -> A%d\n",
-                                                current_idx, next_idx);
-                                        current_idx = next_idx;
-                                        lista_cp[current_idx].estado = RUNNING;
-                                        kill(lista_cp[current_idx].pid, SIGCONT);
-                                    } else {
-                                        if (DEBUG) {
-                                            fprintf(stderr, "[KERNEL] Nenhum processo READY após bloqueio\n");
-                                        }
-                                    }
+
+                            // 4. Pausa o processo (Sinal SIGSTOP)
+                            kill(msg.remetente_pid, SIGSTOP);
+                            
+                            // 5. Escalonamento: O processo atual parou, precisamos eleger outro
+                            if (proc_idx == current_idx) {
+                                int next_idx = find_next_ready(current_idx);
+                                if (next_idx != -1) {
+                                    current_idx = next_idx;
+                                    lista_cp[current_idx].estado = RUNNING;
+                                    kill(lista_cp[current_idx].pid, SIGCONT);
+                                } else {
+                                    if (DEBUG) fprintf(stderr, "[KERNEL] CPU Idle (todos bloqueados)\n");
                                 }
                             }
                         }
@@ -686,61 +730,73 @@ int main(void) {
                 /* --- Loop Principal dos Processos Ax --- */
                 
                 while (lista_cp[i].pc < MAX_ITERACOES) {
+                    sleep(1); // Simula processamento
+                    lista_cp[i].pc++;
                     
-                    sleep(1);
+                    // Decide se faz syscall (Probabilidade definida no define, ex: 15%)
+                    int rand_prob = rand() % 100;
                     
-                    lista_cp[i].pc++;                    if (DEBUG && lista_cp[i].pc % 5 == 0) {
-                        fprintf(stderr, "[A%d] Iteração %d/%d\n", i, lista_cp[i].pc, MAX_ITERACOES);
-                    }
-                    
-                    int rand_syscall = rand() % 100;
-                    
-                    if (rand_syscall < PROB_SYSCALL) {
+                    if (rand_prob < PROB_SYSCALL) {
+                        
+                        // Prepara a estrutura na memória compartilhada
+                        lista_cp[i].buffer_resposta.owner_id = i; 
+                        
+                        int d = rand(); // Número aleatório para decidir o tipo
+                        
+                        if (d % 2 != 0) { 
+                            // --- IMPAR: Operação de ARQUIVO (Read/Write) ---
+                            // Path aleatório: "meuarquivo_0.txt" até "meuarquivo_2.txt"
+                            sprintf(lista_cp[i].buffer_resposta.path, "meuarquivo_%d.txt", rand() % 3);
+                            lista_cp[i].buffer_resposta.offset = (rand() % 5) * 16; // 0, 16, 32...
+
+                            if ((d / 2) % 2 == 0) {
+                                // Tipo: READ
+                                lista_cp[i].buffer_resposta.type = REQ_READ;
+                            } else {
+                                // Tipo: WRITE (Preenche payload com algo)
+                                lista_cp[i].buffer_resposta.type = REQ_WRITE;
+                                strcpy((char*)lista_cp[i].buffer_resposta.data, "DADOS_TESTE_XY");
+                            }
+                        } 
+                        else {
+                            // --- PAR: Operação de DIRETÓRIO (Add/Rem/List) ---
+                            sprintf(lista_cp[i].buffer_resposta.path, "meudir_%d", rand() % 3);
+                            
+                            int op_dir = rand() % 3;
+                            if (op_dir == 0) {
+                                lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
+                            } else if (op_dir == 1) {
+                                lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
+                                sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
+                            } else {
+                                lista_cp[i].buffer_resposta.type = REQ_REMOVE;
+                                sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
+                            }
+                        }
+
+                        // Avisa o Kernel
                         Mensagem msg;
                         msg.type = MSG_SYSCALL;
                         msg.remetente_pid = getpid();
+                        write(pipe_syscall[1], &msg, sizeof(Mensagem));
                         
-                        int op_choice = rand() % 3;
+                        // Bloqueia esperando a resposta
+                        pause();
                         
-                        if (op_choice == 0) {
-                            msg.op = OP_EXECUTE;
-                            msg.device = NO_DEVICE;
-                            
-                            if (DEBUG) {
-                                fprintf(stderr, "[A%d] Syscall: EXECUTE (não bloqueia)\n", i);
-                            }
-                        }
-                        else {
-                            msg.device = (rand() % 2 == 0) ? DEV_D1 : DEV_D2;
-                            
-                            if (op_choice == 1) {
-                                msg.op = OP_READ;
-                                fprintf(stderr, "[A%d] Syscall: READ D%d\n", i, msg.device);
-                            } else {
-                                msg.op = OP_WRITE;
-                                fprintf(stderr, "[A%d] Syscall: WRITE D%d\n", i, msg.device);
-                            }
-                        }
-                        
-                        if (write(pipe_syscall[1], &msg, sizeof(Mensagem)) == -1) {
-                            perror("[A%d] Erro ao enviar syscall");
-                        }
-                        
-                        if (msg.op != OP_EXECUTE) {
-                            usleep(100000);
-                            
-                            if (lista_cp[i].estado == RUNNING) {
-                                pause();
-                            }
+                        // Acordou! Verifica o que chegou
+                        SFSMessage resultado = lista_cp[i].buffer_resposta;
+                        if (resultado.status >= 0) {
+                            if (DEBUG) fprintf(stderr, "[A%d] Sucesso na op %d! (Status/Bytes: %d)\n", 
+                                              i, resultado.type, resultado.status);
+                        } else {
+                            if (DEBUG) fprintf(stderr, "[A%d] Erro na op %d (Status: %d)\n", 
+                                              i, resultado.type, resultado.status);
                         }
                     }
                 }
-                
                 lista_cp[i].estado = FINISHED;
-                
                 fprintf(stderr, "[A%d] Finalizou! Total: D1=%d, D2=%d\n", 
                         i, lista_cp[i].d1_count, lista_cp[i].d2_count);
-                
                 exit(0);
             }
         }
