@@ -39,7 +39,8 @@ void push_msg(ResponseQueue *q, SFSMessage msg) {
 }
 
 SFSMessage pop_msg(ResponseQueue *q) {
-    SFSMessage msg; // Retorno vazio se erro
+    SFSMessage msg;
+    memset(&msg, 0, sizeof(SFSMessage)); // Inicializa para evitar warning
     if (is_empty(q)) return msg; 
     msg = q->buffer[q->head];
     q->head = (q->head + 1) % QUEUE_SIZE;
@@ -432,18 +433,16 @@ int main(void) {
                 init_queue(&file_queue);
                 init_queue(&dir_queue);
 
-                // Adiciona o socket ao cálculo do max_fd para o select
-                if (sockfd > max_fd) max_fd = sockfd;
-
                 // Fecha extremidades não usadas dos pipes
                 close(pipe_irq[1]);      // Kernel não escreve IRQs
                 close(pipe_syscall[1]);  // Kernel não escreve syscalls
 
-                // Filas de processos bloqueados por dispositivo
-                // Índices 0..NUM_PROCESSOS armazenam índices de processos (1..5)
-                // Valor -1 marca posição vazia
+                // Filas de processos bloqueados por dispositivo (não usadas nesta versão)
+                // Mantidas para compatibilidade futura
                 int fila_d1[NUM_PROCESSOS + 1];
                 int fila_d2[NUM_PROCESSOS + 1];
+                (void)fila_d1; // Suprime warning
+                (void)fila_d2; // Suprime warning
                 
                 for (int j = 0; j <= NUM_PROCESSOS; j++) {
                     fila_d1[j] = -1;
@@ -485,9 +484,10 @@ int main(void) {
                 // Índice do processo atualmente em execução (começa com A1)
                 int current_idx = 1;
                 
-                // Monitora os dois pipes sem bloquear
+                // Monitora os dois pipes e o socket sem bloquear
                 fd_set read_fds;
                 int max_fd = (pipe_irq[0] > pipe_syscall[0]) ? pipe_irq[0] : pipe_syscall[0];
+                if (sockfd > max_fd) max_fd = sockfd; // Inclui socket UDP no select
                 
                 Mensagem msg;
                 
