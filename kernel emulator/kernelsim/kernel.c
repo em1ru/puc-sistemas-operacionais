@@ -432,9 +432,6 @@ int main(void) {
                 init_queue(&file_queue);
                 init_queue(&dir_queue);
 
-                // Adiciona o socket ao cálculo do max_fd para o select
-                if (sockfd > max_fd) max_fd = sockfd;
-
                 // Fecha extremidades não usadas dos pipes
                 close(pipe_irq[1]);      // Kernel não escreve IRQs
                 close(pipe_syscall[1]);  // Kernel não escreve syscalls
@@ -442,13 +439,13 @@ int main(void) {
                 // Filas de processos bloqueados por dispositivo
                 // Índices 0..NUM_PROCESSOS armazenam índices de processos (1..5)
                 // Valor -1 marca posição vazia
-                int fila_d1[NUM_PROCESSOS + 1];
-                int fila_d2[NUM_PROCESSOS + 1];
+                // int fila_d1[NUM_PROCESSOS + 1];
+                // int fila_d2[NUM_PROCESSOS + 1];
                 
-                for (int j = 0; j <= NUM_PROCESSOS; j++) {
-                    fila_d1[j] = -1;
-                    fila_d2[j] = -1;
-                }
+                // for (int j = 0; j <= NUM_PROCESSOS; j++) {
+                //     fila_d1[j] = -1;
+                //     fila_d2[j] = -1;
+                // }
 
                 // Inicializa os blocos de controle de todos os processos
                 for (int j = 0; j < NUM_PROCESSOS; j++) {
@@ -488,6 +485,9 @@ int main(void) {
                 // Monitora os dois pipes sem bloquear
                 fd_set read_fds;
                 int max_fd = (pipe_irq[0] > pipe_syscall[0]) ? pipe_irq[0] : pipe_syscall[0];
+                
+                // Adiciona o socket ao cálculo do max_fd para o select
+                if (sockfd > max_fd) max_fd = sockfd;
                 
                 Mensagem msg;
                 
