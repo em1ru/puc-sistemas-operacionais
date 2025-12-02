@@ -54,9 +54,9 @@ SFSMessage pop_msg(ResponseQueue *q) {
 #define TRUE 1
 #define FALSE 0
 #define MAX_ITERACOES 20        // Número máximo de iterações de cada processo A
-#define TIME_SLICE 2            // Tempo do time slice em segundos
-#define PROB_IRQ1 10            // Probabilidade de IRQ1 (D1) em % - sugerido 10%
-#define PROB_IRQ2 5             // Probabilidade de IRQ2 (D2) em % - sugerido 5%
+#define TIME_SLICE_MS 500       // Tempo do time slice em milissegundos (PDF: 500ms)
+#define PROB_IRQ1 10            // Probabilidade de IRQ1 (Arquivo) em % (PDF: 10%)
+#define PROB_IRQ2 2             // Probabilidade de IRQ2 (Diretório) em % (PDF: 2%)
 #define PROB_SYSCALL 15         // Probabilidade de syscall em cada iteração (%)
 #define DEBUG 1                 // Ativa logs detalhados (0 = desativa)
 
@@ -368,7 +368,7 @@ int main(void) {
     fprintf(stderr, "Configurações:\n");
     fprintf(stderr, "  - Processos de aplicação: %d (A1..A5)\n", NUM_APPS);
     fprintf(stderr, "  - Iterações máximas: %d\n", MAX_ITERACOES);
-    fprintf(stderr, "  - Time slice: %d segundos\n", TIME_SLICE);
+    fprintf(stderr, "  - Time slice: %d ms\n", TIME_SLICE_MS);
     fprintf(stderr, "  - Prob. IRQ1 (D1): %d%%\n", PROB_IRQ1);
     fprintf(stderr, "  - Prob. IRQ2 (D2): %d%%\n", PROB_IRQ2);
     fprintf(stderr, "  - Prob. Syscall: %d%%\n", PROB_SYSCALL);
@@ -558,12 +558,13 @@ int main(void) {
                                     // 2. Copia a resposta para a memória do processo
                                     lista_cp[proc_idx].buffer_resposta = resposta;
                                     
-                                    // 3. Desbloqueia o processo (Tira de BLOCKED)
-                                    // Nota: Se estava bloqueado esperando arquivo, estava em BLOCKED_D1_R/W
+                                    // 3. Desbloqueia o processo e incrementa contador de operações de arquivo
                                     lista_cp[proc_idx].estado = READY;
+                                    lista_cp[proc_idx].d1_count++;
                                     
                                     if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] IRQ1: Entregando resposta de ARQUIVO para A%d\n", proc_idx);
+                                        fprintf(stderr, "[KERNEL] IRQ1: Entregando resposta de ARQUIVO para A%d (total D1: %d)\n", 
+                                                proc_idx, lista_cp[proc_idx].d1_count);
                                     }
 
                                     // 4. Preempção: Se o processo acordado tiver prioridade ou for a vez dele
@@ -587,9 +588,11 @@ int main(void) {
                                     
                                     lista_cp[proc_idx].buffer_resposta = resposta;
                                     lista_cp[proc_idx].estado = READY;
+                                    lista_cp[proc_idx].d2_count++;
                                     
                                     if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] IRQ2: Entregando resposta de DIRETÓRIO para A%d\n", proc_idx);
+                                        fprintf(stderr, "[KERNEL] IRQ2: Entregando resposta de DIRETÓRIO para A%d (total D2: %d)\n", 
+                                                proc_idx, lista_cp[proc_idx].d2_count);
                                     }
                                     
                                     if (lista_cp[current_idx].estado != RUNNING) {
@@ -708,8 +711,8 @@ int main(void) {
                 /* --- Loop Principal do InterController --- */
                 
                 while (1) {
-                    // Aguarda o time slice
-                    sleep(TIME_SLICE);
+                    // Aguarda o time slice (500ms = 500000 microssegundos)
+                    usleep(TIME_SLICE_MS * 1000);
                     
                     // Envia IRQ0 (timeslice) - sempre enviado
                     msg.irq_type = 0;
