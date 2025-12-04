@@ -256,7 +256,114 @@ No arquivo kernel.c:
   - DEBUG = 1             : Ativa/desativa logs detalhados
 
 ================================================================================
-                         9. CONCLUSÃO
+                    9. CASO DE TESTE: OPERAÇÕES DE ESCRITA
+================================================================================
+
+Para validar o funcionamento do sistema, foi realizado um teste focado em
+operações de escrita (WRITE) pelos processos A1-A5.
+
+9.1 Código do Teste (trecho de kernel.c)
+----------------------------------------
+
+    // Define o tipo sempre como WRITE (cria arquivo se não existir)
+    lista_cp[i].buffer_resposta.type = REQ_WRITE;
+    
+    // Gera nomes de arquivo entre "teste_0.txt" e "teste_4.txt"
+    sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
+    
+    // Define offset: 0 (inicio) ou 16, 32... 
+    // Nota: Se offset > tamanho atual, o servidor preenche com espaços.
+    lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
+    
+    // Preenche o payload (16 bytes) com dados identificáveis
+    // Exemplo: "A1-Iter5-WRITE"
+    snprintf((char*)lista_cp[i].buffer_resposta.data, BLOCK_SIZE, 
+             "A%d-Iter%d-WRITE", i, lista_cp[i].pc);
+
+9.2 Log do Servidor SFSS
+------------------------
+
+    [SFSS] Servidor de Arquivos iniciado na porta 3999
+    [SFSS] Raiz do sistema de arquivos: ./fs_root
+    [SFSS] Requisição de: localhost (127.0.0.1)        
+    [SFSS] WRITE: ./fs_root/A1/teste_4.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)       
+    [SFSS] WRITE: ./fs_root/A3/teste_0.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)       
+    [SFSS] WRITE: ./fs_root/A5/teste_1.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)        
+    [SFSS] WRITE: ./fs_root/A2/teste_3.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)       
+    [SFSS] WRITE: ./fs_root/A4/teste_0.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)        
+    [SFSS] WRITE: ./fs_root/A3/teste_2.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A5/teste_4.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A1/teste_0.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_1.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A3/teste_2.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A5/teste_2.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A1/teste_3.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A4/teste_3.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A5/teste_4.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A3/teste_4.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_4.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_0.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_0.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_4.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+
+9.3 Análise dos Resultados
+--------------------------
+
+O log demonstra que:
+
+  ✓ Todos os 5 processos (A1-A5) conseguiram fazer requisições de escrita
+  ✓ Cada processo escreveu apenas em sua própria pasta (/A1, /A2, etc.)
+  ✓ Os arquivos foram criados automaticamente (teste_0.txt a teste_4.txt)
+  ✓ Escritas em diferentes offsets funcionaram (0, 16, 32 bytes)
+  ✓ Todas as escritas tiveram sucesso (16 bytes por operação)
+  ✓ O protocolo UDP funcionou corretamente (request-reply)
+
+Arquivos gerados em fs_root/:
+  - A1/: teste_0.txt, teste_3.txt, teste_4.txt
+  - A2/: teste_0.txt, teste_1.txt, teste_3.txt, teste_4.txt
+  - A3/: teste_0.txt, teste_2.txt, teste_4.txt
+  - A4/: teste_0.txt, teste_3.txt
+  - A5/: teste_1.txt, teste_2.txt, teste_4.txt
+
+================================================================================
+                         10. CONCLUSÃO
 ================================================================================
 
 O trabalho implementa com sucesso todos os requisitos do enunciado:
