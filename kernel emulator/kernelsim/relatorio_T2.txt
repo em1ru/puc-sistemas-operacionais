@@ -525,13 +525,78 @@ Análise:
 Resultado: ✓ Criação de diretórios funcionando, tratamento de duplicados OK.
 
 --------------------------------------------------------------------------------
-9.5 TESTE DE LISTAGEM DE DIRETÓRIOS (LISTDIR)
+9.5 TESTE 4: LISTAGEM DE DIRETÓRIOS (LISTDIR)
 --------------------------------------------------------------------------------
 
-O código para teste de listagem de diretórios está preparado:
+Estado dos arquivos (resultado do Teste 3 - CREATE_DIR):
+
+    A1/  dir_teste_0/, dir_teste_9/, teste_1.txt           (3 entradas)
+    A2/  dir_teste_0/, dir_teste_2/, teste_0.txt           (3 entradas)
+    A3/  dir_teste_0/, teste_2.txt, teste_4.txt            (3 entradas)
+    A4/  dir_teste_7/, dir_teste_8/                        (2 entradas)
+    A5/  dir_teste_1/, dir_teste_3/, dir_teste_6/,         (6 entradas)
+         dir_teste_8/, teste_1.txt, teste_4.txt
+
+Código do teste:
 
     lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
-    sprintf(lista_cp[i].buffer_resposta.path, ".");  // Lista o diretório raiz do processo
+    sprintf(lista_cp[i].buffer_resposta.path, ".");  // Lista o diretório raiz
+
+Log do servidor SFSS:
+
+    [SFSS] LISTDIR: ./fs_root/A4/.
+    [SFSS] Listagem: 2 entradas encontradas
+    [SFSS] LISTDIR: ./fs_root/A3/.
+    [SFSS] Listagem: 3 entradas encontradas
+    [SFSS] LISTDIR: ./fs_root/A1/.
+    [SFSS] Listagem: 3 entradas encontradas
+    [SFSS] LISTDIR: ./fs_root/A2/.
+    [SFSS] Listagem: 3 entradas encontradas
+    [SFSS] LISTDIR: ./fs_root/A5/.
+    [SFSS] Listagem: 6 entradas encontradas
+    ... (22 requisições LISTDIR no total)
+
+--------------------------------------------------------------------------------
+9.5.1 RASTREAMENTO COMPLETO DE UMA SYSCALL (LISTDIR do A3)
+--------------------------------------------------------------------------------
+
+Para demonstrar o fluxo completo de uma operação, rastreamos uma syscall
+de listagem do processo A3 desde a requisição até a resposta:
+
+  1. PROCESSO A3 FAZ SYSCALL:
+     [KERNEL] Syscall de A3: LIST no Path '.' -> Enviando ao SFSS
+     
+  2. SERVIDOR RECEBE E RESPONDE:
+     [KERNEL] UDP recebido. Tipo: LIST_ACK Owner: A3
+     
+  3. INTERCONTROLLER GERA IRQ2:
+     [INTERCONTROL] IRQ2 enviado (entregando resposta, op. dir.)
+     
+  4. KERNEL ENTREGA RESPOSTA:
+     [KERNEL] IRQ2 (Rede): Resposta de DIRETÓRIO entregue a A3 (Total Dirs: 1)
+     
+  5. ESCALONAMENTO (Round Robin):
+     [KERNEL] A5 pausado
+     [KERNEL] Escalonamento: A5 -> A3
+     [KERNEL] IRQ1 recebido, mas fila de Arquivos vazia.
+     
+  6. PROCESSO A3 RECEBE RESULTADO:
+     [A3] Sucesso na op LIST_ACK! (Status/Bytes: 3)
+     -> Conteúdo (3 itens): [DIR: dir_teste_0] [ARQ: teste_2.txt] [ARQ: teste_4.txt]
+
+Validação: O resultado retornado (3 itens: dir_teste_0, teste_2.txt, teste_4.txt)
+           confere exatamente com o conteúdo real do diretório A3/ no servidor.
+
+Análise do fluxo:
+  ✓ Syscall enviada via pipe (A3 -> Kernel)
+  ✓ Requisição UDP enviada ao SFSS
+  ✓ Resposta UDP recebida do SFSS
+  ✓ IRQ2 gerado pelo InterController
+  ✓ Kernel entrega resposta ao processo correto
+  ✓ Escalonamento Round Robin funcionando
+  ✓ Conteúdo do diretório retornado corretamente
+
+Resultado: ✓ Listagem de diretórios funcionando, fluxo completo validado.
 
 ================================================================================
                          10. CONCLUSÃO
