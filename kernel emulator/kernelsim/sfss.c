@@ -86,7 +86,7 @@ void handle_write(SFSMessage *msg) {
             printf("[SFSS] Arquivo removido: %s\n", full_path);
             msg->status = 0; // Sucesso
         } else {
-            printf("[SFSS] Erro ao remover arquivo: %s\n", strerror(errno));
+            printf("[SFSS] Erro ao remover arquivo '%s': %s\n", full_path, strerror(errno));
             msg->status = -1;
         }
         return;
@@ -100,7 +100,7 @@ void handle_write(SFSMessage *msg) {
     }
     
     if (fp == NULL) {
-        printf("[SFSS] Erro ao abrir/criar arquivo: %s\n", strerror(errno));
+        printf("[SFSS] Erro ao abrir/criar arquivo '%s': %s\n", full_path, strerror(errno));
         msg->status = -1;
         return;
     }
@@ -165,7 +165,7 @@ void handle_create_dir(SFSMessage *msg) {
             printf("[SFSS] Diretório já existe: %s\n", new_dir_path);
             msg->status = -2; // Já existe
         } else {
-            printf("[SFSS] Erro ao criar diretório: %s\n", strerror(errno));
+            printf("[SFSS] Erro ao criar diretório '%s': %s\n", new_dir_path, strerror(errno));
             msg->status = -1; // Erro genérico
         }
     }
@@ -189,7 +189,7 @@ void handle_remove(SFSMessage *msg) {
     
     // Verifica se é arquivo ou diretório
     if (stat(target_path, &st) != 0) {
-        printf("[SFSS] Alvo não encontrado: %s\n", strerror(errno));
+        printf("[SFSS] Alvo não encontrado '%s': %s\n", target_path, strerror(errno));
         msg->status = -1; // Não existe
         return;
     }
@@ -236,7 +236,7 @@ void handle_listdir(SFSMessage *msg) {
     
     dir = opendir(full_path);
     if (dir == NULL) {
-        printf("[SFSS] Erro ao abrir diretório: %s\n", strerror(errno));
+        printf("[SFSS] Erro ao abrir diretório '%s': %s\n", full_path, strerror(errno));
         msg->status = -1;
         msg->nrnames = -1;
         return;
