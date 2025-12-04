@@ -822,17 +822,39 @@ int main(void) {
                         // =============================== TESTE DE LEITURA EXCLUSIVA (teste 1) ===========================
                         // ================================================================================================
                         
-                        // Define o tipo sempre como READ
-                        lista_cp[i].buffer_resposta.type = REQ_READ;
+                        // // Define o tipo sempre como READ
+                        // lista_cp[i].buffer_resposta.type = REQ_READ;
                         
-                        // Tenta ler os mesmos arquivos gerados no teste anterior (teste_0 a teste_4)
-                        sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
+                        // // Tenta ler os mesmos arquivos gerados no teste anterior (teste_0 a teste_4)
+                        // sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
                         
-                        // Lê de um offset aleatório (0, 16, 32...)
-                        // Se o offset existir no arquivo, o servidor retorna o dado.
-                        lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
+                        // // Lê de um offset aleatório (0, 16, 32...)
+                        // // Se o offset existir no arquivo, o servidor retorna o dado.
+                        // lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
                         
-                        // Limpa o buffer de dados para garantir que não tem lixo antes de ler
+                        // // Limpa o buffer de dados para garantir que não tem lixo antes de ler
+                        // memset(lista_cp[i].buffer_resposta.data, 0, BLOCK_SIZE);
+                        
+                        // ================================================================================================
+                        // ================================================================================================
+                        // ================================================================================================
+
+                        // ================================================================================================
+                        // =============================== TESTE DE REMOÇÃO EXCLUSIVA (teste 2) ===========================
+                        // ================================================================================================
+                        
+                        // Define o tipo como REMOVE
+                        lista_cp[i].buffer_resposta.type = REQ_REMOVE;
+                        
+                        // O 'path' é o diretório onde o arquivo está. Usamos "." para a raiz do usuário (/Ax)
+                        sprintf(lista_cp[i].buffer_resposta.path, ".");
+                        
+                        // O 'secondary_name' é o nome do arquivo a ser removido (alvo)
+                        // Sorteia um dos arquivos criados anteriormente (teste_0 a teste_4)
+                        sprintf(lista_cp[i].buffer_resposta.secondary_name, "teste_%d.txt", rand() % 5);
+                        
+                        // Zera o payload e offset (não usados na remoção, mas bom limpar)
+                        lista_cp[i].buffer_resposta.offset = 0;
                         memset(lista_cp[i].buffer_resposta.data, 0, BLOCK_SIZE);
                         
                         // ================================================================================================
@@ -894,8 +916,31 @@ int main(void) {
                         // Acordou! Verifica o que chegou
                         SFSMessage resultado = lista_cp[i].buffer_resposta;
                         if (resultado.status >= 0) {
-                            if (DEBUG) fprintf(stderr, "[A%d] Sucesso na op %s! (Status/Bytes: %d)\n", 
+                            if (DEBUG) {
+                                fprintf(stderr, "[A%d] Sucesso na op %s! (Status/Bytes: %d)\n", 
                                               i, get_op_name(resultado.type), resultado.status);
+                                // --- MELHORIA: SE FOR LISTAGEM, DECIFRA E MOSTRA OS NOMES ---
+                                if (resultado.type == REP_LISTDIR) {
+                                    int count = resultado.nrnames;
+                                    fprintf(stderr, "\n\t   -> Conteúdo (%d itens): ", count);
+                                    
+                                    // Itera sobre os metadados (fstlstpositions)
+                                    for (int k = 0; k < count && k < MAX_DIR_ENTRIES; k++) {
+                                        int start = resultado.fstlstpositions[k].start_pos;
+                                        int end = resultado.fstlstpositions[k].end_pos;
+                                        int is_dir = resultado.fstlstpositions[k].is_dir;
+                                        int len = end - start + 1;
+                                        
+                                        // "%.*s" é um truque do printf para imprimir apenas 'len' caracteres
+                                        fprintf(stderr, "[%s: %.*s] ", 
+                                                (is_dir ? "DIR" : "ARQ"), 
+                                                len, 
+                                                &resultado.allfilenames[start]);
+                                    }
+                                }
+                                fprintf(stderr, "\n"); // Quebra de linha final
+                            }
+
                         } else {
                             if (DEBUG) fprintf(stderr, "[A%d] Erro na op %s (Status: %d)\n", 
                                               i, get_op_name(resultado.type), resultado.status);
