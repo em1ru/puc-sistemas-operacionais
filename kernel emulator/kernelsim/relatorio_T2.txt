@@ -462,24 +462,76 @@ Análise:
 Resultado: ✓ Remoções funcionando, tratamento de erros OK.
 
 --------------------------------------------------------------------------------
-9.4 TESTE DE OPERAÇÕES DE DIRETÓRIO (CREATE_DIR / LISTDIR)
+9.4 TESTE 3: CRIAÇÃO DE DIRETÓRIOS (CREATE_DIR)
 --------------------------------------------------------------------------------
 
-O código para teste de criação e listagem de diretórios está preparado:
+Estado dos arquivos ANTES do teste (resultado do Teste 2 - REMOVE):
 
-    // Operações de DIRETÓRIO (Add/Rem/List)
-    sprintf(lista_cp[i].buffer_resposta.path, "meudir_%d", rand() % 3);
-    
-    int op_dir = rand() % 3;
-    if (op_dir == 0) {
-        lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
-    } else if (op_dir == 1) {
-        lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
-        sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
-    } else {
-        lista_cp[i].buffer_resposta.type = REQ_REMOVE;
-        sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
-    }
+    A1/  teste_1.txt
+    A2/  teste_0.txt
+    A3/  teste_2.txt, teste_4.txt
+    A4/  (vazio)
+    A5/  teste_1.txt, teste_4.txt
+
+Código do teste:
+
+    lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
+    sprintf(lista_cp[i].buffer_resposta.path, ".");
+    sprintf(lista_cp[i].buffer_resposta.secondary_name, "dir_teste_%d", rand() % 10);
+
+Log do servidor:
+
+    [SFSS] CREATE_DIR: ./fs_root/A4/./dir_teste_7
+    [SFSS] Diretório criado: ./fs_root/A4/./dir_teste_7
+    [SFSS] CREATE_DIR: ./fs_root/A2/./dir_teste_2
+    [SFSS] Diretório criado: ./fs_root/A2/./dir_teste_2
+    [SFSS] CREATE_DIR: ./fs_root/A5/./dir_teste_8
+    [SFSS] Diretório criado: ./fs_root/A5/./dir_teste_8
+    [SFSS] CREATE_DIR: ./fs_root/A1/./dir_teste_0
+    [SFSS] Diretório criado: ./fs_root/A1/./dir_teste_0
+    [SFSS] CREATE_DIR: ./fs_root/A3/./dir_teste_0
+    [SFSS] Diretório criado: ./fs_root/A3/./dir_teste_0
+    [SFSS] CREATE_DIR: ./fs_root/A4/./dir_teste_8
+    [SFSS] Diretório criado: ./fs_root/A4/./dir_teste_8
+    [SFSS] CREATE_DIR: ./fs_root/A4/./dir_teste_8
+    [SFSS] Diretório já existe: ./fs_root/A4/./dir_teste_8
+    [SFSS] CREATE_DIR: ./fs_root/A2/./dir_teste_0
+    [SFSS] Diretório criado: ./fs_root/A2/./dir_teste_0
+    [SFSS] CREATE_DIR: ./fs_root/A1/./dir_teste_9
+    [SFSS] Diretório criado: ./fs_root/A1/./dir_teste_9
+    [SFSS] CREATE_DIR: ./fs_root/A5/./dir_teste_6
+    [SFSS] Diretório criado: ./fs_root/A5/./dir_teste_6
+    [SFSS] CREATE_DIR: ./fs_root/A1/./dir_teste_9
+    [SFSS] Diretório já existe: ./fs_root/A1/./dir_teste_9
+    [SFSS] CREATE_DIR: ./fs_root/A5/./dir_teste_1
+    [SFSS] Diretório criado: ./fs_root/A5/./dir_teste_1
+    [SFSS] CREATE_DIR: ./fs_root/A5/./dir_teste_3
+    [SFSS] Diretório criado: ./fs_root/A5/./dir_teste_3
+
+Estado dos arquivos/diretórios APÓS o teste:
+
+    A1/  dir_teste_0/, dir_teste_9/, teste_1.txt
+    A2/  dir_teste_0/, dir_teste_2/, teste_0.txt
+    A3/  dir_teste_0/, teste_2.txt, teste_4.txt
+    A4/  dir_teste_7/, dir_teste_8/
+    A5/  dir_teste_1/, dir_teste_3/, dir_teste_6/, dir_teste_8/, teste_1.txt, teste_4.txt
+
+Análise:
+  - Total de operações: 13 requisições CREATE_DIR
+  - Diretórios criados com sucesso: 11
+  - Tentativas de criar diretório existente: 2 (dir_teste_8 em A4, dir_teste_9 em A1)
+  - O servidor trata corretamente criação de diretórios duplicados
+
+Resultado: ✓ Criação de diretórios funcionando, tratamento de duplicados OK.
+
+--------------------------------------------------------------------------------
+9.5 TESTE DE LISTAGEM DE DIRETÓRIOS (LISTDIR)
+--------------------------------------------------------------------------------
+
+O código para teste de listagem de diretórios está preparado:
+
+    lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
+    sprintf(lista_cp[i].buffer_resposta.path, ".");  // Lista o diretório raiz do processo
 
 ================================================================================
                          10. CONCLUSÃO
