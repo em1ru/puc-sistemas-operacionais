@@ -292,111 +292,118 @@ No arquivo kernel.c:
   - DEBUG = 1             : Ativa/desativa logs detalhados
 
 ================================================================================
-                    9. CASO DE TESTE: OPERAÇÕES DE ESCRITA
+                    9. CASOS DE TESTE
 ================================================================================
 
-Para validar o funcionamento do sistema, foi realizado um teste focado em
-operações de escrita (WRITE) pelos processos A1-A5.
+Para validar o funcionamento do sistema, foram realizados testes isolados
+de cada operação pelos processos A1-A5. Os testes são configurados no
+arquivo kernel.c na seção de syscalls dos processos.
 
-9.1 Código do Teste (trecho de kernel.c)
-----------------------------------------
+--------------------------------------------------------------------------------
+9.1 TESTE 0: OPERAÇÕES DE ESCRITA (WRITE)
+--------------------------------------------------------------------------------
 
-    // Define o tipo sempre como WRITE (cria arquivo se não existir)
+Código do teste:
+
     lista_cp[i].buffer_resposta.type = REQ_WRITE;
-    
-    // Gera nomes de arquivo entre "teste_0.txt" e "teste_4.txt"
     sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
-    
-    // Define offset: 0 (inicio) ou 16, 32... 
-    // Nota: Se offset > tamanho atual, o servidor preenche com espaços.
     lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
-    
-    // Preenche o payload (16 bytes) com dados identificáveis
-    // Exemplo: "A1-Iter5-WRITE"
     snprintf((char*)lista_cp[i].buffer_resposta.data, BLOCK_SIZE, 
              "A%d-Iter%d-WRITE", i, lista_cp[i].pc);
 
-9.2 Log do Servidor SFSS
-------------------------
+Log do servidor (amostra):
 
-    [SFSS] Servidor de Arquivos iniciado na porta 3999
-    [SFSS] Raiz do sistema de arquivos: ./fs_root
-    [SFSS] Requisição de: localhost (127.0.0.1)        
     [SFSS] WRITE: ./fs_root/A1/teste_4.txt (Offset: 32)
     [SFSS] Escrita OK: 16 bytes no offset 32
-    [SFSS] Requisição de: localhost (127.0.0.1)       
     [SFSS] WRITE: ./fs_root/A3/teste_0.txt (Offset: 0)
     [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)       
     [SFSS] WRITE: ./fs_root/A5/teste_1.txt (Offset: 0)
     [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)        
     [SFSS] WRITE: ./fs_root/A2/teste_3.txt (Offset: 32)
     [SFSS] Escrita OK: 16 bytes no offset 32
-    [SFSS] Requisição de: localhost (127.0.0.1)       
-    [SFSS] WRITE: ./fs_root/A4/teste_0.txt (Offset: 0)
-    [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)        
-    [SFSS] WRITE: ./fs_root/A3/teste_2.txt (Offset: 16)
-    [SFSS] Escrita OK: 16 bytes no offset 16
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A5/teste_4.txt (Offset: 16)
-    [SFSS] Escrita OK: 16 bytes no offset 16
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A1/teste_0.txt (Offset: 32)
-    [SFSS] Escrita OK: 16 bytes no offset 32
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A2/teste_1.txt (Offset: 0)
-    [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A3/teste_2.txt (Offset: 0)
-    [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A5/teste_2.txt (Offset: 0)
-    [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A1/teste_3.txt (Offset: 32)
-    [SFSS] Escrita OK: 16 bytes no offset 32
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A4/teste_3.txt (Offset: 16)
-    [SFSS] Escrita OK: 16 bytes no offset 16
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A5/teste_4.txt (Offset: 0)
-    [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A3/teste_4.txt (Offset: 0)
-    [SFSS] Escrita OK: 16 bytes no offset 0
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A2/teste_4.txt (Offset: 32)
-    [SFSS] Escrita OK: 16 bytes no offset 32
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A2/teste_0.txt (Offset: 16)
-    [SFSS] Escrita OK: 16 bytes no offset 16
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A2/teste_0.txt (Offset: 32)
-    [SFSS] Escrita OK: 16 bytes no offset 32
-    [SFSS] Requisição de: localhost (127.0.0.1)
-    [SFSS] WRITE: ./fs_root/A2/teste_4.txt (Offset: 16)
-    [SFSS] Escrita OK: 16 bytes no offset 16
+    ...
 
-9.3 Análise dos Resultados
---------------------------
+Arquivos gerados em fs_root/ após o teste:
 
-O log demonstra que:
+    A0/  (vazio - pasta compartilhada)
+    A1/  teste_0.txt, teste_3.txt, teste_4.txt
+    A2/  teste_0.txt, teste_1.txt, teste_3.txt, teste_4.txt
+    A3/  teste_0.txt, teste_1.txt, teste_2.txt, teste_4.txt
+    A4/  teste_0.txt, teste_1.txt, teste_3.txt, teste_4.txt
+    A5/  teste_0.txt, teste_1.txt, teste_2.txt, teste_4.txt
 
-  ✓ Todos os 5 processos (A1-A5) conseguiram fazer requisições de escrita
-  ✓ Cada processo escreveu apenas em sua própria pasta (/A1, /A2, etc.)
-  ✓ Os arquivos foram criados automaticamente (teste_0.txt a teste_4.txt)
-  ✓ Escritas em diferentes offsets funcionaram (0, 16, 32 bytes)
-  ✓ Todas as escritas tiveram sucesso (16 bytes por operação)
-  ✓ O protocolo UDP funcionou corretamente (request-reply)
+Resultado: ✓ Todas as escritas com sucesso, arquivos criados corretamente.
 
-Arquivos gerados em fs_root/:
-  - A1/: teste_0.txt, teste_3.txt, teste_4.txt
-  - A2/: teste_0.txt, teste_1.txt, teste_3.txt, teste_4.txt
-  - A3/: teste_0.txt, teste_2.txt, teste_4.txt
-  - A4/: teste_0.txt, teste_3.txt
-  - A5/: teste_1.txt, teste_2.txt, teste_4.txt
+--------------------------------------------------------------------------------
+9.2 TESTE 1: OPERAÇÕES DE LEITURA (READ)
+--------------------------------------------------------------------------------
+
+Código do teste (usa arquivos criados no Teste 0):
+
+    lista_cp[i].buffer_resposta.type = REQ_READ;
+    sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
+    lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
+    memset(lista_cp[i].buffer_resposta.data, 0, BLOCK_SIZE);
+
+Log do servidor:
+
+    [SFSS] READ: ./fs_root/A5/teste_1.txt (Offset: 16)
+    [SFSS] READ: ./fs_root/A4/teste_1.txt (Offset: 16)
+    [SFSS] READ: ./fs_root/A2/teste_4.txt (Offset: 32)
+    [SFSS] READ: ./fs_root/A3/teste_0.txt (Offset: 32)
+    [SFSS] READ: ./fs_root/A5/teste_3.txt (Offset: 16)
+    [SFSS] Erro ao abrir arquivo './fs_root/A5/teste_3.txt': No such file or directory
+    [SFSS] READ: ./fs_root/A4/teste_0.txt (Offset: 16)
+    [SFSS] READ: ./fs_root/A3/teste_0.txt (Offset: 16)
+    [SFSS] READ: ./fs_root/A2/teste_3.txt (Offset: 16)
+    [SFSS] READ: ./fs_root/A5/teste_4.txt (Offset: 16)
+    [SFSS] READ: ./fs_root/A3/teste_0.txt (Offset: 32)
+    [SFSS] READ: ./fs_root/A2/teste_1.txt (Offset: 0)
+    [SFSS] READ: ./fs_root/A4/teste_3.txt (Offset: 0)
+    [SFSS] READ: ./fs_root/A3/teste_3.txt (Offset: 32)
+    [SFSS] Erro ao abrir arquivo './fs_root/A3/teste_3.txt': No such file or directory
+    [SFSS] READ: ./fs_root/A2/teste_2.txt (Offset: 16)
+    [SFSS] Erro ao abrir arquivo './fs_root/A2/teste_2.txt': No such file or directory
+    ...
+
+Resumo do kernel ao finalizar:
+
+    [KERNEL] Todos os processos de aplicação finalizaram!
+    [KERNEL] Resumo final de Operações de I/O:
+      A1: PC=20 | Arq.Ops (D1)=0 | Dir.Ops (D2)=0
+      A2: PC=20 | Arq.Ops (D1)=6 | Dir.Ops (D2)=0
+      A3: PC=20 | Arq.Ops (D1)=4 | Dir.Ops (D2)=0
+      A4: PC=20 | Arq.Ops (D1)=4 | Dir.Ops (D2)=0
+      A5: PC=20 | Arq.Ops (D1)=3 | Dir.Ops (D2)=0
+
+Análise:
+  - Total de operações de arquivo: 0+6+4+4+3 = 17 operações
+  - Leituras com sucesso: Arquivos existentes retornaram dados
+  - Erros esperados: Alguns arquivos aleatórios não existem (teste_3.txt em A5,
+    teste_3.txt em A3, teste_2.txt em A2) - comportamento correto do sistema
+  - O servidor trata corretamente arquivos inexistentes retornando erro
+
+Resultado: ✓ Leituras funcionando, tratamento de erros OK.
+
+--------------------------------------------------------------------------------
+9.3 TESTE DE OPERAÇÕES DE DIRETÓRIO (a implementar)
+--------------------------------------------------------------------------------
+
+O código para teste de diretórios está preparado em kernel.c:
+
+    // Operações de DIRETÓRIO (Add/Rem/List)
+    sprintf(lista_cp[i].buffer_resposta.path, "meudir_%d", rand() % 3);
+    
+    int op_dir = rand() % 3;
+    if (op_dir == 0) {
+        lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
+    } else if (op_dir == 1) {
+        lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
+        sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
+    } else {
+        lista_cp[i].buffer_resposta.type = REQ_REMOVE;
+        sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
+    }
 
 ================================================================================
                          10. CONCLUSÃO
