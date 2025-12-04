@@ -386,10 +386,86 @@ Análise:
 Resultado: ✓ Leituras funcionando, tratamento de erros OK.
 
 --------------------------------------------------------------------------------
-9.3 TESTE DE OPERAÇÕES DE DIRETÓRIO (a implementar)
+9.3 TESTE 2: OPERAÇÕES DE REMOÇÃO (REMOVE)
 --------------------------------------------------------------------------------
 
-O código para teste de diretórios está preparado em kernel.c:
+Estado dos arquivos ANTES do teste (gerados pelo Teste 0 - WRITE):
+
+    A1/  teste_1.txt, teste_3.txt
+    A2/  teste_0.txt, teste_1.txt, teste_3.txt, teste_4.txt
+    A3/  teste_0.txt, teste_2.txt, teste_4.txt
+    A4/  teste_0.txt, teste_1.txt
+    A5/  teste_1.txt, teste_4.txt
+
+Código do teste:
+
+    lista_cp[i].buffer_resposta.type = REQ_REMOVE;
+    sprintf(lista_cp[i].buffer_resposta.path, ".");
+    sprintf(lista_cp[i].buffer_resposta.secondary_name, "teste_%d.txt", rand() % 5);
+
+Log do servidor:
+
+    [SFSS] REMOVE: ./fs_root/A1/./teste_4.txt
+    [SFSS] Alvo não encontrado './fs_root/A1/./teste_4.txt': No such file or directory
+    [SFSS] REMOVE: ./fs_root/A2/./teste_3.txt
+    [SFSS] Removido com sucesso: ./fs_root/A2/./teste_3.txt
+    [SFSS] REMOVE: ./fs_root/A4/./teste_0.txt
+    [SFSS] Removido com sucesso: ./fs_root/A4/./teste_0.txt
+    [SFSS] REMOVE: ./fs_root/A3/./teste_0.txt
+    [SFSS] Removido com sucesso: ./fs_root/A3/./teste_0.txt
+    [SFSS] REMOVE: ./fs_root/A1/./teste_3.txt
+    [SFSS] Removido com sucesso: ./fs_root/A1/./teste_3.txt
+    [SFSS] REMOVE: ./fs_root/A2/./teste_4.txt
+    [SFSS] Removido com sucesso: ./fs_root/A2/./teste_4.txt
+    [SFSS] REMOVE: ./fs_root/A4/./teste_4.txt
+    [SFSS] Alvo não encontrado './fs_root/A4/./teste_4.txt': No such file or directory
+    [SFSS] REMOVE: ./fs_root/A2/./teste_1.txt
+    [SFSS] Removido com sucesso: ./fs_root/A2/./teste_1.txt
+    [SFSS] REMOVE: ./fs_root/A4/./teste_1.txt
+    [SFSS] Removido com sucesso: ./fs_root/A4/./teste_1.txt
+    [SFSS] REMOVE: ./fs_root/A2/./teste_1.txt
+    [SFSS] Alvo não encontrado './fs_root/A2/./teste_1.txt': No such file or directory
+    [SFSS] REMOVE: ./fs_root/A1/./teste_0.txt
+    [SFSS] Alvo não encontrado './fs_root/A1/./teste_0.txt': No such file or directory
+    [SFSS] REMOVE: ./fs_root/A2/./teste_4.txt
+    [SFSS] Alvo não encontrado './fs_root/A2/./teste_4.txt': No such file or directory
+    [SFSS] REMOVE: ./fs_root/A4/./teste_1.txt
+    [SFSS] Alvo não encontrado './fs_root/A4/./teste_1.txt': No such file or directory
+    [SFSS] REMOVE: ./fs_root/A1/./teste_0.txt
+    [SFSS] Alvo não encontrado './fs_root/A1/./teste_0.txt': No such file or directory
+
+Estado dos arquivos APÓS o teste:
+
+    A1/  teste_1.txt
+    A2/  teste_0.txt
+    A3/  teste_2.txt, teste_4.txt
+    A4/  (vazio)
+    A5/  teste_1.txt, teste_4.txt
+
+Resumo do kernel ao finalizar:
+
+    [KERNEL] Todos os processos de aplicação finalizaram!
+    [KERNEL] Resumo final de Operações de I/O:
+      A1: PC=20 | Arq.Ops (D1)=0 | Dir.Ops (D2)=4
+      A2: PC=20 | Arq.Ops (D1)=0 | Dir.Ops (D2)=5
+      A3: PC=20 | Arq.Ops (D1)=0 | Dir.Ops (D2)=1
+      A4: PC=20 | Arq.Ops (D1)=0 | Dir.Ops (D2)=4
+      A5: PC=20 | Arq.Ops (D1)=0 | Dir.Ops (D2)=0
+
+Análise:
+  - Total de operações de diretório: 4+5+1+4+0 = 14 operações REMOVE
+  - Remoções com sucesso: 7 arquivos removidos
+  - Erros esperados: 7 tentativas de remover arquivos inexistentes
+    (arquivos já removidos ou que nunca existiram)
+  - O servidor trata corretamente remoções de arquivos inexistentes
+
+Resultado: ✓ Remoções funcionando, tratamento de erros OK.
+
+--------------------------------------------------------------------------------
+9.4 TESTE DE OPERAÇÕES DE DIRETÓRIO (CREATE_DIR / LISTDIR)
+--------------------------------------------------------------------------------
+
+O código para teste de criação e listagem de diretórios está preparado:
 
     // Operações de DIRETÓRIO (Add/Rem/List)
     sprintf(lista_cp[i].buffer_resposta.path, "meudir_%d", rand() % 3);
