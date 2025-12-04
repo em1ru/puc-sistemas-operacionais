@@ -290,6 +290,9 @@ void handle_listdir(SFSMessage *msg) {
 }
 
 int main(int argc, char **argv) {
+    /* --- CORREÇÃO DE LOG: Desativa buffer para garantir escrita imediata no arquivo --- */
+    setvbuf(stdout, NULL, _IONBF, 0);
+    
     int sockfd; /* socket */
     int portno; /* porta para escutar */
     socklen_t clientlen; /* tamanho do endereço do cliente */
