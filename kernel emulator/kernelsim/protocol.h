@@ -81,4 +81,8 @@ typedef struct {
     
 } SFSMessage;
 
+// Traduz o tipo de mensagem do protocolo para texto legível
+const char* get_op_name(int type);
+
+
 #endif // PROTOCOL_H

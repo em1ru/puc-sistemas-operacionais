@@ -54,7 +54,7 @@ SFSMessage pop_msg(ResponseQueue *q) {
 #define TRUE 1
 #define FALSE 0
 #define MAX_ITERACOES 20        // Número máximo de iterações de cada processo A
-#define TIME_SLICE_MS 500       // Tempo do time slice em milissegundos (PDF: 500ms)
+#define TIME_SLICE_MS 5000       // Tempo do time slice em milissegundos (PDF: 500ms)
 #define PROB_IRQ1 10            // Probabilidade de IRQ1 (Arquivo) em % (PDF: 10%)
 #define PROB_IRQ2 2             // Probabilidade de IRQ2 (Diretório) em % (PDF: 2%)
 #define PROB_SYSCALL 15         // Probabilidade de syscall em cada iteração (%)
@@ -138,15 +138,34 @@ void sigcont_handler(int signum) {
     (void)signum; // Evita warning de parâmetro não usado
 }
 
+const char* get_op_name(int type) {
+    switch (type) {
+        case REQ_READ:       return "READ";
+        case REP_READ:       return "READ_ACK";
+        case REQ_WRITE:      return "WRITE";
+        case REP_WRITE:      return "WRITE_ACK";
+        case REQ_CREATE_DIR: return "MKDIR";
+        case REP_CREATE_DIR: return "MKDIR_ACK";
+        case REQ_REMOVE:     return "REMOVE";
+        case REP_REMOVE:     return "REMOVE_ACK";
+        case REQ_LISTDIR:    return "LIST";
+        case REP_LISTDIR:    return "LIST_ACK";
+        case REP_ERROR:      return "ERROR";
+        default:             return "UNKNOWN";
+    }
+}
+
 // Converte enum EstadoProcesso para string legível (útil para logs)
 const char* estado_para_string(EstadoProcesso estado) {
     switch (estado) {
         case READY:         return "READY";
         case RUNNING:       return "RUNNING";
-        case BLOCKED_D1_R:  return "BLOCKED_D1_R";
-        case BLOCKED_D1_W:  return "BLOCKED_D1_W";
-        case BLOCKED_D2_R:  return "BLOCKED_D2_R";
-        case BLOCKED_D2_W:  return "BLOCKED_D2_W";
+        // D1 agora representa espera por Operação de Arquivo (File Op)
+        case BLOCKED_D1_R:  return "WAIT_FILE_OP"; 
+        case BLOCKED_D1_W:  return "WAIT_FILE_OP";
+        // D2 agora representa espera por Operação de Diretório (Dir Op)
+        case BLOCKED_D2_R:  return "WAIT_DIR_OP";
+        case BLOCKED_D2_W:  return "WAIT_DIR_OP";
         case FINISHED:      return "FINISHED";
         default:            return "UNKNOWN";
     }
@@ -174,7 +193,7 @@ void sig_pauseinfo_handler(int signum) {
         
         if (i == 0) {
             // Kernel
-            fprintf(stderr, "[KERNEL] PID=%d | Estado=%s | PC=%d | D1=%d | D2=%d\n",
+            fprintf(stderr, "[KERNEL] PID=%d | Estado=%s | PC=%d | FileOps=%d | DirOps=%d\n",
                     lista_cp[i].pid, estado_str, lista_cp[i].pc,
                     lista_cp[i].d1_count, lista_cp[i].d2_count);
         } 
@@ -185,15 +204,16 @@ void sig_pauseinfo_handler(int signum) {
         } 
         else {
             // Processos A1..A5
-            fprintf(stderr, "[A%d] PID=%d | Estado=%s | PC=%d/%d | D1=%d | D2=%d",
+            fprintf(stderr, "[A%d] PID=%d | Estado=%s | PC=%d/%d | FileOps=%d | DirOps=%d",
                     i, lista_cp[i].pid, estado_str, lista_cp[i].pc,
                     MAX_ITERACOES, lista_cp[i].d1_count, lista_cp[i].d2_count);
             
-            // Se tiver syscall pendente, mostra qual é
+            // Se tiver syscall pendente
             if (lista_cp[i].estado >= BLOCKED_D1_R && lista_cp[i].estado <= BLOCKED_D2_W) {
-                fprintf(stderr, " | Pendente: D%d %s",
-                        lista_cp[i].pending_device,
-                        (lista_cp[i].pending_op == OP_READ) ? "READ" : "WRITE");
+                // Usa nossa nova função auxiliar get_op_name para mostrar o que está pendente
+                fprintf(stderr, " | Pendente: %s em '%s'",
+                        get_op_name(lista_cp[i].buffer_resposta.type),
+                        lista_cp[i].buffer_resposta.path);
             }
             fprintf(stderr, "\n");
         }
@@ -369,8 +389,8 @@ int main(void) {
     fprintf(stderr, "  - Processos de aplicação: %d (A1..A5)\n", NUM_APPS);
     fprintf(stderr, "  - Iterações máximas: %d\n", MAX_ITERACOES);
     fprintf(stderr, "  - Time slice: %d ms\n", TIME_SLICE_MS);
-    fprintf(stderr, "  - Prob. IRQ1 (D1): %d%%\n", PROB_IRQ1);
-    fprintf(stderr, "  - Prob. IRQ2 (D2): %d%%\n", PROB_IRQ2);
+    fprintf(stderr, "  - Prob. IRQ1 (Op. de Read ou Write concluída): %d%%\n", PROB_IRQ1);
+    fprintf(stderr, "  - Prob. IRQ2 (Op. de Diretório concluída): %d%%\n", PROB_IRQ2);
     fprintf(stderr, "  - Prob. Syscall: %d%%\n", PROB_SYSCALL);
     fprintf(stderr, "\nControles:\n");
     fprintf(stderr, "  - Ctrl-C: Pausar e mostrar logs\n");
@@ -437,20 +457,11 @@ int main(void) {
                 close(pipe_irq[1]);      // Kernel não escreve IRQs
                 close(pipe_syscall[1]);  // Kernel não escreve syscalls
 
-<<<<<<< HEAD
                 // Filas de processos bloqueados por dispositivo
                 // Índices 0..NUM_PROCESSOS armazenam índices de processos (1..5)
                 // Valor -1 marca posição vazia
                 // int fila_d1[NUM_PROCESSOS + 1];
                 // int fila_d2[NUM_PROCESSOS + 1];
-=======
-                // Filas de processos bloqueados por dispositivo (não usadas nesta versão)
-                // Mantidas para compatibilidade futura
-                int fila_d1[NUM_PROCESSOS + 1];
-                int fila_d2[NUM_PROCESSOS + 1];
-                (void)fila_d1; // Suprime warning
-                (void)fila_d2; // Suprime warning
->>>>>>> eb376f4479c49573b62e0a512030fc08fe8861a6
                 
                 // for (int j = 0; j <= NUM_PROCESSOS; j++) {
                 //     fila_d1[j] = -1;
@@ -574,7 +585,7 @@ int main(void) {
                                     lista_cp[proc_idx].d1_count++;
                                     
                                     if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] IRQ1: Entregando resposta de ARQUIVO para A%d (total D1: %d)\n", 
+                                        fprintf(stderr, "[KERNEL] IRQ1 (Rede): Resposta de ARQUIVO entregue a A%d (Total Files: %d)\n", 
                                                 proc_idx, lista_cp[proc_idx].d1_count);
                                     }
 
@@ -602,7 +613,7 @@ int main(void) {
                                     lista_cp[proc_idx].d2_count++;
                                     
                                     if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] IRQ2: Entregando resposta de DIRETÓRIO para A%d (total D2: %d)\n", 
+                                        fprintf(stderr, "[KERNEL] IRQ2 (Rede): Resposta de DIRETÓRIO entregue a A%d (Total Dirs: %d)\n", 
                                                 proc_idx, lista_cp[proc_idx].d2_count);
                                     }
                                     
@@ -626,8 +637,8 @@ int main(void) {
                                             (struct sockaddr *)&serveraddr, (socklen_t*)&serverlen);
                         
                         if (n > 0) {
-                            if (DEBUG) fprintf(stderr, "[KERNEL] UDP recebido. Tipo: %d Owner: A%d\n", 
-                                              msg_in.type, msg_in.owner_id);
+                            if (DEBUG) fprintf(stderr, "[KERNEL] UDP recebido. Tipo: %s Owner: A%d\n", 
+                                              get_op_name(msg_in.type), msg_in.owner_id);
 
                             // Classifica em fila de Arquivo ou Diretório para aguardar IRQ
                             // O enunciado diz que READ/WRITE são operações de Arquivo (IRQ1)
@@ -653,8 +664,9 @@ int main(void) {
                             SFSMessage req = lista_cp[proc_idx].buffer_resposta;
                             
                             if (DEBUG) {
-                                fprintf(stderr, "[KERNEL] Syscall de A%d: Tipo %d no Path '%s'\n", 
-                                        proc_idx, req.type, req.path);
+                                // Usa get_op_name para ficar bonito: "Syscall de A1: READ no Path 'meuarquivo.txt'"
+                                fprintf(stderr, "[KERNEL] Syscall de A%d: %s no Path '%s' -> Enviando ao SFSS\n", 
+                                        proc_idx, get_op_name(req.type), req.path);
                             }
 
                             // 2. Envia para o servidor SFSS via UDP
@@ -692,10 +704,10 @@ int main(void) {
                 /* --- Fim da Simulação --- */
                 
                 fprintf(stderr, "\n[KERNEL] Todos os processos de aplicação finalizaram!\n");
-                fprintf(stderr, "[KERNEL] Resumo final:\n");
-                
+                fprintf(stderr, "[KERNEL] Resumo final de Operações de I/O:\n");
+
                 for (int j = 1; j <= NUM_APPS; j++) {
-                    fprintf(stderr, "  A%d: PC=%d, D1=%d acessos, D2=%d acessos\n",
+                    fprintf(stderr, "  A%d: PC=%d | Arq.Ops (D1)=%d | Dir.Ops (D2)=%d\n",
                             j, lista_cp[j].pc, lista_cp[j].d1_count, lista_cp[j].d2_count);
                 }
                 
@@ -722,7 +734,7 @@ int main(void) {
                 /* --- Loop Principal do InterController --- */
                 
                 while (1) {
-                    // Aguarda o time slice (500ms = 500000 microssegundos)
+                    // Aguarda o time slice (5000ms = 5000000 microssegundos)
                     usleep(TIME_SLICE_MS * 1000);
                     
                     // Envia IRQ0 (timeslice) - sempre enviado
@@ -740,7 +752,7 @@ int main(void) {
                         if (write(pipe_irq[1], &msg, sizeof(Mensagem)) == -1) {
                             perror("[INTERCONTROL] Erro ao enviar IRQ1");
                         } else {
-                            fprintf(stderr, "[INTERCONTROL] IRQ1 enviado (D1 finished)\n");
+                            fprintf(stderr, "[INTERCONTROL] IRQ1 enviado (entregando resposta: op. arquivo)\n");
                         }
                     }
                     
@@ -751,7 +763,7 @@ int main(void) {
                         if (write(pipe_irq[1], &msg, sizeof(Mensagem)) == -1) {
                             perror("[INTERCONTROL] Erro ao enviar IRQ2");
                         } else {
-                            fprintf(stderr, "[INTERCONTROL] IRQ2 enviado (D2 finished)\n");
+                            fprintf(stderr, "[INTERCONTROL] IRQ2 enviado para A%d (entregando resposta, op. dir.)\n", msg.);
                         }
                     }
                 }
@@ -781,38 +793,71 @@ int main(void) {
                         
                         // Prepara a estrutura na memória compartilhada
                         lista_cp[i].buffer_resposta.owner_id = i; 
-                        
-                        int d = rand(); // Número aleatório para decidir o tipo
-                        
-                        if (d % 2 != 0) { 
-                            // --- IMPAR: Operação de ARQUIVO (Read/Write) ---
-                            // Path aleatório: "meuarquivo_0.txt" até "meuarquivo_2.txt"
-                            sprintf(lista_cp[i].buffer_resposta.path, "meuarquivo_%d.txt", rand() % 3);
-                            lista_cp[i].buffer_resposta.offset = (rand() % 5) * 16; // 0, 16, 32...
 
-                            if ((d / 2) % 2 == 0) {
-                                // Tipo: READ
-                                lista_cp[i].buffer_resposta.type = REQ_READ;
-                            } else {
-                                // Tipo: WRITE (Preenche payload com algo)
-                                lista_cp[i].buffer_resposta.type = REQ_WRITE;
-                                strcpy((char*)lista_cp[i].buffer_resposta.data, "DADOS_TESTE_XY");
-                            }
-                        } 
-                        else {
-                            // --- PAR: Operação de DIRETÓRIO (Add/Rem/List) ---
-                            sprintf(lista_cp[i].buffer_resposta.path, "meudir_%d", rand() % 3);
+                         // ================================================================================================
+                        // =============================== TESTE DE ESCRITA EXCLUSIVA ======================================
+                        // =================================================================================================
+                        
+                        // Define o tipo sempre como WRITE (cria arquivo se não existir)
+                        lista_cp[i].buffer_resposta.type = REQ_WRITE;
+                        
+                        // Gera nomes de arquivo entre "teste_0.txt" e "teste_4.txt"
+                        sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
+                        
+                        // Define offset: 0 (inicio) ou 16, 32... 
+                        // Nota: Se o offset for maior que o tamanho atual, o servidor preenche com espaços.
+                        lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
+                        
+                        // Preenche o payload (16 bytes) com dados identificáveis
+                        // Exemplo: "A1-Iter5-DADOS"
+                        snprintf((char*)lista_cp[i].buffer_resposta.data, BLOCK_SIZE, 
+                                 "A%d-Iter%d-WRITE", i, lista_cp[i].pc);
+                        
+                        // ================================================================================================
+                        // ================================================================================================
+                        // ================================================================================================
+
+
+                        
+                        // ================================================================================================
+                        // ======================== GERANDO OPERAÇÕES ALEATORIAMENTE ======================================
+                        // ================================================================================================
+
+                        // int d = rand(); // Número aleatório para decidir o tipo
+                        
+                        // if (d % 2 != 0) { 
+                        //     // --- IMPAR: Operação de ARQUIVO (Read/Write) ---
+                        //     // Path aleatório: "meuarquivo_0.txt" até "meuarquivo_2.txt"
+                        //     sprintf(lista_cp[i].buffer_resposta.path, "meuarquivo_%d.txt", rand() % 3);
+                        //     lista_cp[i].buffer_resposta.offset = (rand() % 5) * 16; // 0, 16, 32...
+
+                        //     if ((d / 2) % 2 == 0) {
+                        //         // Tipo: READ
+                        //         lista_cp[i].buffer_resposta.type = REQ_READ;
+                        //     } else {
+                        //         // Tipo: WRITE (Preenche payload com algo)
+                        //         lista_cp[i].buffer_resposta.type = REQ_WRITE;
+                        //         strcpy((char*)lista_cp[i].buffer_resposta.data, "DADOS_TESTE_XY");
+                        //     }
+                        // } 
+                        // else {
+                        //     // --- PAR: Operação de DIRETÓRIO (Add/Rem/List) ---
+                        //     sprintf(lista_cp[i].buffer_resposta.path, "meudir_%d", rand() % 3);
                             
-                            int op_dir = rand() % 3;
-                            if (op_dir == 0) {
-                                lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
-                            } else if (op_dir == 1) {
-                                lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
-                                sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
-                            } else {
-                                lista_cp[i].buffer_resposta.type = REQ_REMOVE;
-                                sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
-                            }
+                        //     int op_dir = rand() % 3;
+                        //     if (op_dir == 0) {
+                        //         lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
+                        //     } else if (op_dir == 1) {
+                        //         lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
+                        //         sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
+                        //     } else {
+                        //         lista_cp[i].buffer_resposta.type = REQ_REMOVE;
+                        //         sprintf(lista_cp[i].buffer_resposta.secondary_name, "subdir_%d", rand()%10);
+                        //     }
+                        
+                        // ================================================================================================
+                        // ================================================================================================
+                        // ================================================================================================
                         }
 
                         // Avisa o Kernel
