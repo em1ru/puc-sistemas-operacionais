@@ -843,21 +843,54 @@ int main(void) {
                         // =============================== TESTE DE REMOÇÃO EXCLUSIVA (teste 2) ===========================
                         // ================================================================================================
                         
-                        // Define o tipo como REMOVE
-                        lista_cp[i].buffer_resposta.type = REQ_REMOVE;
+                        // // Define o tipo como REMOVE
+                        // lista_cp[i].buffer_resposta.type = REQ_REMOVE;
                         
-                        // O 'path' é o diretório onde o arquivo está. Usamos "." para a raiz do usuário (/Ax)
-                        sprintf(lista_cp[i].buffer_resposta.path, ".");
+                        // // O 'path' é o diretório onde o arquivo está. Usamos "." para a raiz do usuário (/Ax)
+                        // sprintf(lista_cp[i].buffer_resposta.path, ".");
                         
-                        // O 'secondary_name' é o nome do arquivo a ser removido (alvo)
-                        // Sorteia um dos arquivos criados anteriormente (teste_0 a teste_4)
-                        sprintf(lista_cp[i].buffer_resposta.secondary_name, "teste_%d.txt", rand() % 5);
+                        // // O 'secondary_name' é o nome do arquivo a ser removido (alvo)
+                        // // Sorteia um dos arquivos criados anteriormente (teste_0 a teste_4)
+                        // sprintf(lista_cp[i].buffer_resposta.secondary_name, "teste_%d.txt", rand() % 5);
                         
-                        // Zera o payload e offset (não usados na remoção, mas bom limpar)
-                        lista_cp[i].buffer_resposta.offset = 0;
-                        memset(lista_cp[i].buffer_resposta.data, 0, BLOCK_SIZE);
+                        // // Zera o payload e offset (não usados na remoção, mas bom limpar)
+                        // lista_cp[i].buffer_resposta.offset = 0;
+                        // memset(lista_cp[i].buffer_resposta.data, 0, BLOCK_SIZE);
                         
                         // ================================================================================================
+                        // ================================================================================================
+                        // ================================================================================================
+
+                        // ================================================================================================
+                        // =============================== TESTE DE CRIAR DIRETÓRIOS (teste 3) ============================
+                        // ================================================================================================
+                        
+                        // // Define o tipo como CREATE_DIR
+                        // lista_cp[i].buffer_resposta.type = REQ_CREATE_DIR;
+                        
+                        // // Path base onde criar (raiz do usuário)
+                        // sprintf(lista_cp[i].buffer_resposta.path, ".");
+                        
+                        // // Nome do novo subdiretório (Sorteia entre 10 nomes possíveis)
+                        // // Ex: "dir_teste_5"
+                        // sprintf(lista_cp[i].buffer_resposta.secondary_name, "dir_teste_%d", rand() % 10);
+                        
+                        // ================================================================================================
+                        // ================================================================================================
+
+                        // ================================================================================================
+                        // =============================== TESTE DE LISTAR DIRETÓRIO (teste 4) ============================
+                        // ================================================================================================
+                        
+                        // Define o tipo como LISTDIR
+                        lista_cp[i].buffer_resposta.type = REQ_LISTDIR;
+                        
+                        // Define qual diretório listar (raiz do usuário)
+                        sprintf(lista_cp[i].buffer_resposta.path, ".");
+                        
+                        // Zera campos não usados
+                        memset(lista_cp[i].buffer_resposta.secondary_name, 0, MAX_NAME_LEN);
+                        
                         // ================================================================================================
                         // ================================================================================================
 
