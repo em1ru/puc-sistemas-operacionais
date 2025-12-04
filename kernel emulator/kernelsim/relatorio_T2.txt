@@ -215,20 +215,56 @@ Exemplos:
                     6. COMPILAÇÃO E EXECUÇÃO
 ================================================================================
 
-Compilação:
+6.1 Compilação
+--------------
   $ cd kernelsim
   $ make clean
   $ make
 
-Execução (requer 2 terminais):
+6.2 Execução do Sistema
+-----------------------
 
-  Terminal 1 - Servidor:
-    $ ./sfss 3999
+IMPORTANTE: O projeto requer DUAS sessões de terminal abertas simultaneamente.
+Isso ocorre porque o sistema é composto por dois programas independentes que
+se comunicam via rede UDP:
 
-  Terminal 2 - Simulador:
-    $ ./kernel
+  +------------------+          UDP (porta 3999)          +------------------+
+  |    Terminal 1    |  <---------------------------->   |    Terminal 2    |
+  |      ./sfss      |         Requisições/Respostas     |     ./kernel     |
+  | (Servidor de     |                                   | (Simulador do    |
+  |   Arquivos)      |                                   |  Micro-Kernel)   |
+  +------------------+                                   +------------------+
 
-Teste isolado do servidor:
+Passo a passo:
+
+  1. Abra o PRIMEIRO terminal e inicie o servidor:
+     $ cd kernelsim
+     $ ./sfss 3999
+     
+     O servidor ficará aguardando conexões e mostrará:
+     "[SFSS] Servidor de Arquivos iniciado na porta 3999"
+
+  2. Abra o SEGUNDO terminal e inicie o simulador:
+     $ cd kernelsim
+     $ ./kernel
+     
+     O kernel iniciará os processos A1-A5 e começará a enviar
+     requisições para o servidor na porta 3999.
+
+  3. Observe os dois terminais:
+     - Terminal 1 (sfss): Mostra as requisições recebidas (READ, WRITE, etc.)
+     - Terminal 2 (kernel): Mostra o escalonamento e syscalls dos processos
+
+Por que dois terminais?
+  - O SFSS é um servidor independente que simula um serviço de arquivos remoto
+  - O KernelSim é o cliente que envia requisições ao servidor
+  - Essa arquitetura demonstra a comunicação entre processos via rede UDP
+  - É o modelo típico de micro-kernel: serviços externos ao núcleo
+
+6.3 Teste Isolado do Servidor
+-----------------------------
+Para testar o servidor sem rodar o kernel completo, use o test_client:
+
   Terminal 1: $ ./sfss 3999
   Terminal 2: $ ./test_client localhost 3999 write 1 teste.txt "Ola!" 0
               $ ./test_client localhost 3999 read 1 teste.txt 0
