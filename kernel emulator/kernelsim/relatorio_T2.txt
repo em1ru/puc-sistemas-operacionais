@@ -1,0 +1,427 @@
+================================================================================
+                    RELATÓRIO DO TRABALHO T2
+           Micro-Kernel e Sistema de Arquivos Remoto via UDP
+================================================================================
+
+Disciplina: Sistemas de Computação - INF 1316
+Data: Dezembro de 2025
+
+Alunos:
+  - Gabriel Valente – 2310488
+  - Gabriel Emile – 2220498
+
+================================================================================
+                           1. INTRODUÇÃO
+================================================================================
+
+Este trabalho implementa um simulador de micro-kernel que gerencia 5 processos
+de aplicação (A1-A5) e permite que eles acessem arquivos e diretórios em um
+servidor remoto (SFSS) através do protocolo UDP.
+
+O sistema é uma extensão do T1, substituindo as operações genéricas em 
+dispositivos D1/D2 por operações reais de sistema de arquivos: leitura, 
+escrita, criação de diretórios, remoção e listagem.
+
+================================================================================
+                      2. ARQUIVOS DO PROJETO
+================================================================================
+
+kernelsim/
+├── protocol.h      - Definição do protocolo SFP (mensagens e estruturas)
+├── sfss.c          - Servidor de arquivos (Simple File System Server)
+├── kernel.c        - KernelSim + InterController + Processos A1-A5
+├── test_client.c   - Cliente de teste para verificar o servidor
+├── Makefile        - Script de compilação
+└── fs_root/        - Diretório raiz do sistema de arquivos
+    ├── A0/         - Pasta compartilhada (acesso de qualquer processo)
+    ├── A1/         - Pasta privada do processo A1
+    ├── A2/         - Pasta privada do processo A2
+    ├── A3/         - Pasta privada do processo A3
+    ├── A4/         - Pasta privada do processo A4
+    └── A5/         - Pasta privada do processo A5
+
+================================================================================
+                    3. DESCRIÇÃO DOS COMPONENTES
+================================================================================
+
+3.1 PROTOCOLO SFP (protocol.h)
+------------------------------
+Define o formato das mensagens trocadas entre o KernelSim e o SFSS.
+
+Tipos de mensagem implementados:
+  - REQ_READ / REP_READ       : Leitura de 16 bytes de um arquivo
+  - REQ_WRITE / REP_WRITE     : Escrita de 16 bytes em um arquivo
+  - REQ_CREATE_DIR / REP_CREATE_DIR : Criação de subdiretório
+  - REQ_REMOVE / REP_REMOVE   : Remoção de arquivo ou diretório
+  - REQ_LISTDIR / REP_LISTDIR : Listagem do conteúdo de um diretório
+
+Estrutura principal (SFSMessage):
+  - type        : Tipo da operação (REQ ou REP)
+  - owner_id    : ID do processo solicitante (1-5 para A1-A5)
+  - status      : Código de retorno (>= 0 sucesso, < 0 erro)
+  - path        : Caminho do arquivo/diretório
+  - offset      : Posição para leitura/escrita (múltiplo de 16)
+  - data[16]    : Payload de dados (bloco de 16 bytes)
+  - secondary_name : Nome para criação/remoção de diretórios
+  - allfilenames   : Buffer para listagem de diretório
+  - fstlstpositions: Índices dos nomes no buffer
+  - nrnames        : Número de entradas no diretório
+
+Constantes:
+  - BLOCK_SIZE = 16 bytes (conforme especificado no enunciado)
+  - MAX_DIR_ENTRIES = 40 (máximo de arquivos por diretório)
+
+--------------------------------------------------------------------------------
+
+3.2 SERVIDOR SFSS (sfss.c)
+--------------------------
+Servidor UDP stateless que gerencia o sistema de arquivos.
+
+Funcionamento:
+  1. Inicia na porta especificada (ex: ./sfss 3999)
+  2. Cria automaticamente os diretórios /A0 a /A5 em fs_root/
+  3. Aguarda requisições via UDP (recvfrom)
+  4. Processa a requisição conforme o tipo
+  5. Envia resposta de volta (sendto)
+
+Funções implementadas:
+  - handle_read()       : Lê 16 bytes de um arquivo
+  - handle_write()      : Escreve 16 bytes (cria arquivo se não existir)
+  - handle_create_dir() : Cria novo subdiretório
+  - handle_remove()     : Remove arquivo ou diretório
+  - handle_listdir()    : Lista conteúdo de um diretório
+
+Características:
+  - STATELESS: Não mantém estado entre requisições
+  - Cada processo só acessa sua pasta (/Ax)
+  - Tratamento de erros com códigos negativos
+
+--------------------------------------------------------------------------------
+
+3.3 KERNEL SIMULADOR (kernel.c)
+-------------------------------
+Programa principal que simula o micro-kernel e os processos.
+
+Cria 7 processos via fork():
+  - Índice 0: KernelSim (escalonador e gerenciador)
+  - Índices 1-5: Processos de aplicação A1-A5
+  - Índice 6: InterController (gerador de interrupções)
+
+3.3.1 KernelSim (Processo 0)
+----------------------------
+Responsabilidades:
+  - Escalonamento Round Robin dos processos A1-A5
+  - Recebimento de syscalls via pipe
+  - Envio de requisições ao SFSS via UDP
+  - Gerenciamento das filas de resposta (file_queue e dir_queue)
+  - Entrega de respostas aos processos quando chega IRQ
+
+Estruturas de dados:
+  - lista_cp[]: Array de PCBs (Process Control Blocks) em memória compartilhada
+  - file_queue: Fila circular para respostas de operações de arquivo
+  - dir_queue: Fila circular para respostas de operações de diretório
+
+Estados dos processos:
+  - READY: Pronto para executar
+  - RUNNING: Em execução
+  - BLOCKED_D1_R/W: Bloqueado aguardando operação de arquivo
+  - BLOCKED_D2_R/W: Bloqueado aguardando operação de diretório
+  - FINISHED: Finalizou execução
+
+3.3.2 InterController (Processo 6)
+----------------------------------
+Gera interrupções periodicamente (a cada 500ms):
+  - IRQ0: Sempre (timeslice para troca de contexto)
+  - IRQ1: 10% de probabilidade (conclusão de operação de arquivo)
+  - IRQ2: 2% de probabilidade (conclusão de operação de diretório)
+
+3.3.3 Processos A1-A5 (Processos 1-5)
+-------------------------------------
+Executam um loop de até MAX_ITERACOES (20) iterações.
+A cada iteração:
+  - sleep(1) para simular processamento
+  - Com 15% de probabilidade, fazem uma syscall aleatória:
+    - Se número ímpar: operação de arquivo (READ ou WRITE)
+    - Se número par: operação de diretório (CREATE, REMOVE ou LIST)
+
+--------------------------------------------------------------------------------
+
+3.4 CLIENTE DE TESTE (test_client.c)
+------------------------------------
+Programa para testar o servidor SFSS de forma isolada.
+
+Comandos disponíveis:
+  ./test_client <host> <porta> read <owner> <arquivo> [offset]
+  ./test_client <host> <porta> write <owner> <arquivo> <dados> [offset]
+  ./test_client <host> <porta> mkdir <owner> <path> <nome_dir>
+  ./test_client <host> <porta> rmdir <owner> <path> <nome>
+  ./test_client <host> <porta> ls <owner> <path>
+
+Exemplos:
+  ./test_client localhost 3999 write 1 teste.txt "Hello World!" 0
+  ./test_client localhost 3999 read 1 teste.txt 0
+  ./test_client localhost 3999 ls 1 ""
+  ./test_client localhost 3999 mkdir 1 "" novapasta
+
+================================================================================
+                      4. COMUNICAÇÃO E PROTOCOLOS
+================================================================================
+
+4.1 Comunicação entre Processos Locais
+--------------------------------------
+  - Pipes: InterController -> KernelSim (IRQs)
+           A1-A5 -> KernelSim (Syscalls)
+  - Memória Compartilhada (mmap): PCBs e buffers de mensagem
+  - Sinais: SIGSTOP/SIGCONT para controle de execução
+
+4.2 Comunicação com o Servidor (UDP)
+------------------------------------
+  - Socket UDP para comunicação KernelSim <-> SFSS
+  - Protocolo SFP: Request-Reply
+  - Mensagens de tamanho fixo (struct SFSMessage)
+
+================================================================================
+                      5. FLUXO DE EXECUÇÃO
+================================================================================
+
+5.1 Inicialização
+-----------------
+  1. Processo pai cria memória compartilhada e pipes
+  2. Fork cria os 7 processos filhos
+  3. Todos aguardam sinal de início (pause)
+  4. Simulador ativa Kernel, depois InterController
+  5. Kernel inicia A1 como primeiro processo em execução
+
+5.2 Loop Principal
+------------------
+  1. InterController envia IRQ0 a cada 500ms
+  2. Kernel recebe IRQ0, preempta processo atual, escalona próximo
+  3. Processo Ax decide fazer syscall (15% chance)
+  4. Ax prepara mensagem na memória compartilhada, avisa Kernel via pipe
+  5. Kernel lê mensagem, envia ao SFSS via UDP, bloqueia Ax
+  6. SFSS processa, envia resposta
+  7. Kernel recebe resposta, enfileira na fila apropriada
+  8. Quando chega IRQ1/IRQ2, Kernel entrega resposta ao processo
+  9. Processo é desbloqueado e pode voltar a executar
+
+5.3 Finalização
+---------------
+  1. Cada Ax termina após MAX_ITERACOES
+  2. Quando todos terminam, Kernel encerra InterController
+  3. Simulador aguarda término de todos os processos
+  4. Memória compartilhada é liberada
+
+================================================================================
+                    6. COMPILAÇÃO E EXECUÇÃO
+================================================================================
+
+6.1 Compilação
+--------------
+  $ cd kernelsim
+  $ make clean
+  $ make
+
+6.2 Execução do Sistema
+-----------------------
+
+IMPORTANTE: O projeto requer DUAS sessões de terminal abertas simultaneamente.
+Isso ocorre porque o sistema é composto por dois programas independentes que
+se comunicam via rede UDP:
+
+  +------------------+          UDP (porta 3999)          +------------------+
+  |    Terminal 1    |  <---------------------------->   |    Terminal 2    |
+  |      ./sfss      |         Requisições/Respostas     |     ./kernel     |
+  | (Servidor de     |                                   | (Simulador do    |
+  |   Arquivos)      |                                   |  Micro-Kernel)   |
+  +------------------+                                   +------------------+
+
+Passo a passo:
+
+  1. Abra o PRIMEIRO terminal e inicie o servidor:
+     $ cd kernelsim
+     $ ./sfss 3999
+     
+     O servidor ficará aguardando conexões e mostrará:
+     "[SFSS] Servidor de Arquivos iniciado na porta 3999"
+
+  2. Abra o SEGUNDO terminal e inicie o simulador:
+     $ cd kernelsim
+     $ ./kernel
+     
+     O kernel iniciará os processos A1-A5 e começará a enviar
+     requisições para o servidor na porta 3999.
+
+  3. Observe os dois terminais:
+     - Terminal 1 (sfss): Mostra as requisições recebidas (READ, WRITE, etc.)
+     - Terminal 2 (kernel): Mostra o escalonamento e syscalls dos processos
+
+Por que dois terminais?
+  - O SFSS é um servidor independente que simula um serviço de arquivos remoto
+  - O KernelSim é o cliente que envia requisições ao servidor
+  - Essa arquitetura demonstra a comunicação entre processos via rede UDP
+  - É o modelo típico de micro-kernel: serviços externos ao núcleo
+
+6.3 Teste Isolado do Servidor
+-----------------------------
+Para testar o servidor sem rodar o kernel completo, use o test_client:
+
+  Terminal 1: $ ./sfss 3999
+  Terminal 2: $ ./test_client localhost 3999 write 1 teste.txt "Ola!" 0
+              $ ./test_client localhost 3999 read 1 teste.txt 0
+              $ ./test_client localhost 3999 ls 1 ""
+
+================================================================================
+                    7. CONTROLES EM TEMPO DE EXECUÇÃO
+================================================================================
+
+  - Ctrl+C: Pausa a simulação e exibe estado de todos os processos
+            (PIDs, estados, contadores de acesso, syscalls pendentes)
+  
+  - Ctrl+Z: Retoma a simulação após Ctrl+C
+
+================================================================================
+                    8. CONFIGURAÇÕES AJUSTÁVEIS
+================================================================================
+
+No arquivo kernel.c:
+  - MAX_ITERACOES = 20    : Iterações por processo
+  - TIME_SLICE_MS = 500   : Quantum do Round Robin (ms)
+  - PROB_IRQ1 = 10        : Probabilidade de IRQ1 (%)
+  - PROB_IRQ2 = 2         : Probabilidade de IRQ2 (%)
+  - PROB_SYSCALL = 15     : Probabilidade de syscall por iteração (%)
+  - DEBUG = 1             : Ativa/desativa logs detalhados
+
+================================================================================
+                    9. CASO DE TESTE: OPERAÇÕES DE ESCRITA
+================================================================================
+
+Para validar o funcionamento do sistema, foi realizado um teste focado em
+operações de escrita (WRITE) pelos processos A1-A5.
+
+9.1 Código do Teste (trecho de kernel.c)
+----------------------------------------
+
+    // Define o tipo sempre como WRITE (cria arquivo se não existir)
+    lista_cp[i].buffer_resposta.type = REQ_WRITE;
+    
+    // Gera nomes de arquivo entre "teste_0.txt" e "teste_4.txt"
+    sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
+    
+    // Define offset: 0 (inicio) ou 16, 32... 
+    // Nota: Se offset > tamanho atual, o servidor preenche com espaços.
+    lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
+    
+    // Preenche o payload (16 bytes) com dados identificáveis
+    // Exemplo: "A1-Iter5-WRITE"
+    snprintf((char*)lista_cp[i].buffer_resposta.data, BLOCK_SIZE, 
+             "A%d-Iter%d-WRITE", i, lista_cp[i].pc);
+
+9.2 Log do Servidor SFSS
+------------------------
+
+    [SFSS] Servidor de Arquivos iniciado na porta 3999
+    [SFSS] Raiz do sistema de arquivos: ./fs_root
+    [SFSS] Requisição de: localhost (127.0.0.1)        
+    [SFSS] WRITE: ./fs_root/A1/teste_4.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)       
+    [SFSS] WRITE: ./fs_root/A3/teste_0.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)       
+    [SFSS] WRITE: ./fs_root/A5/teste_1.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)        
+    [SFSS] WRITE: ./fs_root/A2/teste_3.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)       
+    [SFSS] WRITE: ./fs_root/A4/teste_0.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)        
+    [SFSS] WRITE: ./fs_root/A3/teste_2.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A5/teste_4.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A1/teste_0.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_1.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A3/teste_2.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A5/teste_2.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A1/teste_3.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A4/teste_3.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A5/teste_4.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A3/teste_4.txt (Offset: 0)
+    [SFSS] Escrita OK: 16 bytes no offset 0
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_4.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_0.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_0.txt (Offset: 32)
+    [SFSS] Escrita OK: 16 bytes no offset 32
+    [SFSS] Requisição de: localhost (127.0.0.1)
+    [SFSS] WRITE: ./fs_root/A2/teste_4.txt (Offset: 16)
+    [SFSS] Escrita OK: 16 bytes no offset 16
+
+9.3 Análise dos Resultados
+--------------------------
+
+O log demonstra que:
+
+  ✓ Todos os 5 processos (A1-A5) conseguiram fazer requisições de escrita
+  ✓ Cada processo escreveu apenas em sua própria pasta (/A1, /A2, etc.)
+  ✓ Os arquivos foram criados automaticamente (teste_0.txt a teste_4.txt)
+  ✓ Escritas em diferentes offsets funcionaram (0, 16, 32 bytes)
+  ✓ Todas as escritas tiveram sucesso (16 bytes por operação)
+  ✓ O protocolo UDP funcionou corretamente (request-reply)
+
+Arquivos gerados em fs_root/:
+  - A1/: teste_0.txt, teste_3.txt, teste_4.txt
+  - A2/: teste_0.txt, teste_1.txt, teste_3.txt, teste_4.txt
+  - A3/: teste_0.txt, teste_2.txt, teste_4.txt
+  - A4/: teste_0.txt, teste_3.txt
+  - A5/: teste_1.txt, teste_2.txt, teste_4.txt
+
+================================================================================
+                         10. CONCLUSÃO
+================================================================================
+
+O trabalho implementa com sucesso todos os requisitos do enunciado:
+
+  ✓ Servidor SFSS stateless com comunicação UDP
+  ✓ Protocolo SFP com todas as operações (read, write, add, rem, listdir)
+  ✓ Blocos de 16 bytes para leitura/escrita
+  ✓ Diretórios individuais por processo (/A1 a /A5) + compartilhado (/A0)
+  ✓ KernelSim com escalonamento Round Robin
+  ✓ InterController gerando IRQ0, IRQ1 e IRQ2 com probabilidades corretas
+  ✓ Filas de requisição para arquivo e diretório
+  ✓ Memória compartilhada para comunicação entre processos
+  ✓ Processos A1-A5 fazendo syscalls aleatórias
+  ✓ Dump de estado com Ctrl+C
+  ✓ Cliente de teste para verificação do servidor
+
+O sistema demonstra os conceitos de:
+  - Micro-kernel e comunicação com serviços externos
+  - Escalonamento preemptivo (Round Robin)
+  - Tratamento de interrupções
+  - Comunicação cliente-servidor via UDP
+  - Gerenciamento de processos e estados
+  - Sistema de arquivos remoto
+
+================================================================================
