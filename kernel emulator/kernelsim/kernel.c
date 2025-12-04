@@ -763,7 +763,7 @@ int main(void) {
                         if (write(pipe_irq[1], &msg, sizeof(Mensagem)) == -1) {
                             perror("[INTERCONTROL] Erro ao enviar IRQ2");
                         } else {
-                            fprintf(stderr, "[INTERCONTROL] IRQ2 enviado para A%d (entregando resposta, op. dir.)\n", msg.);
+                            fprintf(stderr, "[INTERCONTROL] IRQ2 enviado (entregando resposta, op. dir.)\n");
                         }
                     }
                 }
@@ -818,12 +818,12 @@ int main(void) {
                         // ================================================================================================
 
 
-                        
+
                         // ================================================================================================
                         // ======================== GERANDO OPERAÇÕES ALEATORIAMENTE ======================================
                         // ================================================================================================
 
-                        // int d = rand(); // Número aleatório para decidir o tipo
+                        int d = rand(); // Número aleatório para decidir o tipo
                         
                         // if (d % 2 != 0) { 
                         //     // --- IMPAR: Operação de ARQUIVO (Read/Write) ---
@@ -858,7 +858,7 @@ int main(void) {
                         // ================================================================================================
                         // ================================================================================================
                         // ================================================================================================
-                        }
+                        // }
 
                         // Avisa o Kernel
                         Mensagem msg;
@@ -873,10 +873,10 @@ int main(void) {
                         SFSMessage resultado = lista_cp[i].buffer_resposta;
                         if (resultado.status >= 0) {
                             if (DEBUG) fprintf(stderr, "[A%d] Sucesso na op %d! (Status/Bytes: %d)\n", 
-                                              i, resultado.type, resultado.status);
+                                              i, get_op_name(resultado.type), resultado.status);
                         } else {
                             if (DEBUG) fprintf(stderr, "[A%d] Erro na op %d (Status: %d)\n", 
-                                              i, resultado.type, resultado.status);
+                                              i, get_op_name(resultado.type), resultado.status);
                         }
                     }
                 }
