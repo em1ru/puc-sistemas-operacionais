@@ -54,7 +54,7 @@ SFSMessage pop_msg(ResponseQueue *q) {
 #define TRUE 1
 #define FALSE 0
 #define MAX_ITERACOES 20        // Número máximo de iterações de cada processo A
-#define TIME_SLICE_MS 5000       // Tempo do time slice em milissegundos (PDF: 500ms)
+#define TIME_SLICE_MS 500       // Tempo do time slice em milissegundos (PDF: 500ms)
 #define PROB_IRQ1 10            // Probabilidade de IRQ1 (Arquivo) em % (PDF: 10%)
 #define PROB_IRQ2 2             // Probabilidade de IRQ2 (Diretório) em % (PDF: 2%)
 #define PROB_SYSCALL 15         // Probabilidade de syscall em cada iteração (%)
@@ -585,8 +585,8 @@ int main(void) {
                                     lista_cp[proc_idx].d1_count++;
                                     
                                     if (DEBUG) {
-                                        fprintf(stderr, "[KERNEL] IRQ1 (Rede): Resposta de ARQUIVO entregue a A%d (Total Files: %d)\n", 
-                                                proc_idx, lista_cp[proc_idx].d1_count);
+                                        fprintf(stderr, "[KERNEL] IRQ1 (Rede): Resposta de ARQUIVO entregue a A%d (Files Ops: %d; Dir Ops: %d)\n", 
+                                                proc_idx, lista_cp[proc_idx].d1_count, lista_cp[proc_idx].d2_count);
                                     }
 
                                     // 4. Preempção: Se o processo acordado tiver prioridade ou for a vez dele
@@ -734,7 +734,7 @@ int main(void) {
                 /* --- Loop Principal do InterController --- */
                 
                 while (1) {
-                    // Aguarda o time slice (5000ms = 5000000 microssegundos)
+                    // Aguarda o time slice (500ms = 500000 microssegundos)
                     usleep(TIME_SLICE_MS * 1000);
                     
                     // Envia IRQ0 (timeslice) - sempre enviado
@@ -794,24 +794,46 @@ int main(void) {
                         // Prepara a estrutura na memória compartilhada
                         lista_cp[i].buffer_resposta.owner_id = i; 
 
-                         // ================================================================================================
-                        // =============================== TESTE DE ESCRITA EXCLUSIVA ======================================
+                        // =================================================================================================
+                        // =============================== TESTE DE ESCRITA EXCLUSIVA (teste 0) ============================
                         // =================================================================================================
                         
-                        // Define o tipo sempre como WRITE (cria arquivo se não existir)
-                        lista_cp[i].buffer_resposta.type = REQ_WRITE;
+                        // // Define o tipo sempre como WRITE (cria arquivo se não existir)
+                        // lista_cp[i].buffer_resposta.type = REQ_WRITE;
                         
-                        // Gera nomes de arquivo entre "teste_0.txt" e "teste_4.txt"
+                        // // Gera nomes de arquivo entre "teste_0.txt" e "teste_4.txt"
+                        // sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
+                        
+                        // // Define offset: 0 (inicio) ou 16, 32... 
+                        // // Nota: Se o offset for maior que o tamanho atual, o servidor preenche com espaços.
+                        // lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
+                        
+                        // // Preenche o payload (16 bytes) com dados identificáveis
+                        // // Exemplo: "A1-Iter5-DADOS"
+                        // snprintf((char*)lista_cp[i].buffer_resposta.data, BLOCK_SIZE, 
+                        //          "A%d-Iter%d-WRITE", i, lista_cp[i].pc);
+                        
+                        // ================================================================================================
+                        // ================================================================================================
+                        // ================================================================================================
+
+
+                        // ================================================================================================
+                        // =============================== TESTE DE LEITURA EXCLUSIVA (teste 1) ===========================
+                        // ================================================================================================
+                        
+                        // Define o tipo sempre como READ
+                        lista_cp[i].buffer_resposta.type = REQ_READ;
+                        
+                        // Tenta ler os mesmos arquivos gerados no teste anterior (teste_0 a teste_4)
                         sprintf(lista_cp[i].buffer_resposta.path, "teste_%d.txt", rand() % 5);
                         
-                        // Define offset: 0 (inicio) ou 16, 32... 
-                        // Nota: Se o offset for maior que o tamanho atual, o servidor preenche com espaços.
+                        // Lê de um offset aleatório (0, 16, 32...)
+                        // Se o offset existir no arquivo, o servidor retorna o dado.
                         lista_cp[i].buffer_resposta.offset = (rand() % 3) * 16;
                         
-                        // Preenche o payload (16 bytes) com dados identificáveis
-                        // Exemplo: "A1-Iter5-DADOS"
-                        snprintf((char*)lista_cp[i].buffer_resposta.data, BLOCK_SIZE, 
-                                 "A%d-Iter%d-WRITE", i, lista_cp[i].pc);
+                        // Limpa o buffer de dados para garantir que não tem lixo antes de ler
+                        memset(lista_cp[i].buffer_resposta.data, 0, BLOCK_SIZE);
                         
                         // ================================================================================================
                         // ================================================================================================
@@ -872,16 +894,16 @@ int main(void) {
                         // Acordou! Verifica o que chegou
                         SFSMessage resultado = lista_cp[i].buffer_resposta;
                         if (resultado.status >= 0) {
-                            if (DEBUG) fprintf(stderr, "[A%d] Sucesso na op %d! (Status/Bytes: %d)\n", 
+                            if (DEBUG) fprintf(stderr, "[A%d] Sucesso na op %s! (Status/Bytes: %d)\n", 
                                               i, get_op_name(resultado.type), resultado.status);
                         } else {
-                            if (DEBUG) fprintf(stderr, "[A%d] Erro na op %d (Status: %d)\n", 
+                            if (DEBUG) fprintf(stderr, "[A%d] Erro na op %s (Status: %d)\n", 
                                               i, get_op_name(resultado.type), resultado.status);
                         }
                     }
                 }
                 lista_cp[i].estado = FINISHED;
-                fprintf(stderr, "[A%d] Finalizou! Total: D1=%d, D2=%d\n", 
+                fprintf(stderr, "[A%d] Finalizou! Total: FileOps=%d, DirOps=%d\n", 
                         i, lista_cp[i].d1_count, lista_cp[i].d2_count);
                 exit(0);
             }

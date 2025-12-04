@@ -42,7 +42,8 @@ void handle_read(SFSMessage *msg) {
     msg->type = REP_READ;
     
     if (fp == NULL) {
-        printf("[SFSS] Erro ao abrir arquivo: %s\n", strerror(errno));
+        // Alterado para mostrar o nome do arquivo (full_path)
+        printf("[SFSS] Erro ao abrir arquivo '%s': %s\n", full_path, strerror(errno)); 
         msg->status = -1;
         memset(msg->data, 0, BLOCK_SIZE);
     } else {
@@ -292,7 +293,7 @@ void handle_listdir(SFSMessage *msg) {
 int main(int argc, char **argv) {
     /* --- CORREÇÃO DE LOG: Desativa buffer para garantir escrita imediata no arquivo --- */
     setvbuf(stdout, NULL, _IONBF, 0);
-    
+
     int sockfd; /* socket */
     int portno; /* porta para escutar */
     socklen_t clientlen; /* tamanho do endereço do cliente */
